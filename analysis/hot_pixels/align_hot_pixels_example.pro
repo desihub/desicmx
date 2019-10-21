@@ -7,7 +7,7 @@
 
 pro align_hot_pixels_example, master_dark_cutout, ptc_cutout
 
-; this example intentionally hardcodes everything for PETAL_LOC = 3 <=> GFA02,
+; this example intentionally hardcodes everything for PETAL_LOC = 3 <=> GFA02 (in Spain lab data nomenclature),
 ; specifically amplifier E
 
 ; single 14 second dark frame from GFA02 PTC lab sequence
