@@ -1,0 +1,102 @@
+#! /usr/bin/env python
+# -*- Encoding: utf-8 -*-
+#
+# DESI - Crude analysis of the twilight levels in SM04 fibers
+# 
+# Author: Laurent Le Guillou <llg@lpnhe.in2p3.fr>
+# Date: 2019-10-24
+#
+
+import sys
+import os,os.path
+import getopt
+import importlib
+import glob
+
+import numpy as np
+from scipy.interpolate import interp1d
+
+import astropy.io.fits as pyfits
+from astropy.time import Time
+
+from scipy.optimize import curve_fit
+import pylab as pb
+
+arms = [b'B3', b'R3', b'Z3']
+
+colors = {
+    b'B3': 'b',
+    b'R3': 'r',
+    b'Z3': 'g'
+}
+
+results = np.load("twiglights-flux-evolution-20191026.npy")
+ 
+
+
+def func(x, a, b):
+    return a * np.exp(-b*x)
+
+# # cm = pb.cm.get_cmap('RdYlBu')
+# cm = pb.cm.get_cmap('coolwarm')
+
+pb.figure()
+pb.title("DESI spectrograph camera: twilight median level (e-/s)")
+
+# dbase = Time("2019-10-24 01:05:23", format='iso', scale='utc') # Sun -5° on evening 2019-10-23 local
+
+# dbase = Time("2019-10-24 00:45:19", format='iso', scale='utc') # Sunset on evening 2019-10-23 local
+dbase = Time("2019-10-26 00:43:16.51", format='iso', scale='utc') # Sunset on evening 2019-10-23 local
+tbase = dbase.unix
+
+for arm in arms:
+    # pb.figure(arm.decode('ascii'))
+    # pb.title("DESI spectrograph camera " + 
+    #          arm.decode('ascii') + ": twilight median level (e-/s)")
+    sel = (results['arm'] == arm) # & (results['expnum'] == 18084)
+    
+    #     vmin = np.median(results[sel]['flux_limited']) - 3 * results[sel]['flux_limited'].std()
+    #     vmax = np.median(results[sel]['flux_limited']) + 3 * results[sel]['flux_limited'].std()
+
+    times = ( results[sel]['tstamp'] - tbase ) 
+    fluxes = results[sel]['flux_median']
+
+    # pb.xlabel("Time [seconds]")
+    # pb.ylabel("Median Fiber Flux [e-/s]")
+    fig = pb.scatter(times, fluxes,
+                     marker='+', color = colors[arm], 
+                     label = ( arm.decode('ascii') + ": " + "twilight level" ) )
+
+    sel_fit = sel
+    if arm == b'Z3':
+        print("for Z3 removing...")
+        print(results[sel]['expnum'])
+        # sel_fit = sel_fit & (results['expnum'] >= 20205)
+        sel_fit = sel_fit & (results['expnum'] < 20988)
+        print(results[sel_fit]['expnum'])
+
+    print("ARM = ", arm)
+
+    times_fit = ( results[sel_fit]['tstamp'] - tbase ) 
+    fluxes_fit = results[sel_fit]['flux_median']
+
+    popt, pcov = curve_fit(func, times_fit, fluxes_fit, p0=[10000., 1./100.])
+    # halfperiod = 60.0* np.log(2.)/popt[1]
+    halfperiod = np.log(2.)/popt[1]
+    print("Fit results for ", arm, popt, pcov)
+    xx = np.linspace(times.min(), times.max(), 100)
+    yy = func(xx, *popt)
+    pb.plot(xx, yy, color = colors[arm], label=( arm.decode('ascii') + ": " + 
+                                                 ( "exp. fit $t_{1/2}$ = %5.3f s" % halfperiod ) ))
+
+# pb.xlabel("Time since Sunset on 2019-10-23 local [seconds]")
+pb.xlabel("Time since Sunset on 2019-10-25 local [seconds]")
+pb.ylabel("Median Fiber Flux [e-/s]")
+
+handles, labels = pb.gca().get_legend_handles_labels()
+order = [3,4,5,0,1,2]
+pb.legend([handles[idx] for idx in order],[labels[idx] for idx in order])
+# pb.legend()
+    
+pb.show()
+

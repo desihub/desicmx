@@ -1,0 +1,69 @@
+[
+  {
+    "sequence": "Pause",
+    "delay": 300.0
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "zero",
+    "program": "Evening Twilights 2019-10-25 (zero)",
+    "obstype": "zero",
+    "count": 10
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "science",
+    "exptime": 9.76,
+    "program": "Evening Twilights 2019-10-25 (twilight  9.76s)",
+    "obstype": "twilight"
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "science",
+    "exptime": 13.22,
+    "program": "Evening Twilights 2019-10-25 (twilight 13.22s)",
+    "obstype": "twilight"
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "science",
+    "exptime": 18.27,
+    "program": "Evening Twilights 2019-10-25 (twilight 18.27s)",
+    "obstype": "twilight"
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "science",
+    "exptime": 25.96,
+    "program": "Evening Twilights 2019-10-25 (twilight 25.96s)",
+    "obstype": "twilight"
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "science",
+    "exptime": 38.56,
+    "program": "Evening Twilights 2019-10-25 (twilight 38.56s)",
+    "obstype": "twilight"
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "science",
+    "exptime": 61.99,
+    "program": "Evening Twilights 2019-10-25 (twilight 61.99s)",
+    "obstype": "twilight"
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "science",
+    "exptime": 118.19,
+    "program": "Evening Twilights 2019-10-25 (twilight 118.19s)",
+    "obstype": "twilight"
+  },
+  {
+    "sequence": "Spectrographs",
+    "flavor": "science",
+    "exptime": 496.3,
+    "program": "Evening Twilights 2019-10-25 (twilight 496.30s)",
+    "obstype": "twilight"
+  }
+]

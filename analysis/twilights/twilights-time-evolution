@@ -1,0 +1,267 @@
+#! /usr/bin/env python
+# -*- Encoding: utf-8 -*-
+#
+# DESI - Crude analysis of the twilight levels in SM04 fibers
+# 
+# Author: Laurent Le Guillou <llg@lpnhe.in2p3.fr>
+# Date: 2019-10-24
+#
+
+import sys
+import os,os.path
+import getopt
+import importlib
+import glob
+
+import numpy as np
+from scipy.interpolate import interp1d
+
+import astropy.io.fits as pyfits
+from astropy.time import Time
+
+# import datetime
+# import dateutil.parser
+
+
+# import ntuple
+# from desiplc import *
+# from utils import *
+
+# --------- Parse command line arguments ------------------
+
+def usage():
+    print("usage: twiglights-time-evolution", file=sys.stderr)
+    print(file=sys.stderr)
+
+try:
+    opts, args = \
+        getopt.getopt(sys.argv[1:], "hvo:", \
+                          ["help", "verbose", "offset="])
+except getopt.GetoptError:
+    # print help information and exit
+    usage()
+    sys.exit(1)
+        
+# print opts
+# print args
+
+# --------- Default argument values -----------------------
+
+num_offset = -1500
+verbose = False
+
+for option, arg in opts:
+    if option in ("-h", "--help"):
+        help()
+        sys.exit(0)
+    if option in ("-v", "--verbose"):
+        verbose = True
+    if option in ("-o", "--offset"):
+        num_offset = int(arg)
+        # print "using offset = ", num_offset
+
+# if len(args) < 2:
+#     usage()
+#     sys.exit(1)
+
+# # --------- Loading fiber positions ------------------------
+
+# # csv = open("fiberpos-all.ecsv")
+# csv = open("desi-focalplane_2019-09-16T00:00:00.ecsv")
+# lines = csv.readlines()
+# fiber_xy = {}
+
+# for line in lines:
+#     if line[0] in ['\n','#']:
+#         continue
+#     parts = line.split()
+#     # if len(parts) != 14:
+#     if len(parts) != 24:
+#         continue
+#     # if parts[2] != 'POS': # only fiber positioners
+#     if parts[5] != 'POS': # only fiber positioners
+#         continue
+
+#     # fiber_id = int(parts[4])
+#     # fiber_x = float(parts[5])
+#     # fiber_y = float(parts[6])
+#     fiber_id = int(parts[10])
+#     fiber_x = float(parts[14])
+#     fiber_y = float(parts[15])
+
+#     fiber_xy[fiber_id] = (fiber_x, fiber_y)
+
+
+# --------- Loading data ----------------------------------
+
+# spectrapath = "/home/llg/lpnp204-data/DESI/SM03/extracted/20181031"
+# spectrapath = "."
+
+# spectrapath = "./extracted/20191023"
+# expnums = [20204, 20205, 20206, 20207, 20208, 20208, 20209, 20210, 20211, 20212]
+
+spectrapath = "./extracted/20191025"
+expnums = [20981, 20982, 20983, 20984, 20985, 20986, 20987, 20988]
+
+arms = [b'B3', b'R3', b'Z3']
+# arms = [b'Z3']
+# arms = [arm.upper() for arm in specs.arms]
+
+colors = {
+    b'B3': 'b',
+    b'R3': 'r',
+    b'Z3': 'g'
+}
+
+restricted_wlrange = { # in Angstrom
+    b'B3': { 'min': 4000., 'max': 5600. },
+    b'R3': { 'min': 6000., 'max': 7200. },
+    b'Z3': { 'min': 7800., 'max': 9000. }
+}
+
+results = []
+
+for expnum in expnums:
+    for arm in arms:
+        ccd = arm.decode(encoding='ascii').lower()
+        spectrafitsname = os.path.join(spectrapath, "q-%s-%08d.fits" %
+                                       (ccd, expnum))
+        print("  Spectra FITS file is", spectrafitsname)
+        spectrafits = pyfits.open(spectrafitsname)
+        exptime = spectrafits[0].header['EXPTIME']
+
+        datestr = spectrafits[0].header['DATE-OBS']
+        # date = dateutil.parser.parse(spectrafits[0].header['DATE-OBS'])
+        date = Time(datestr, format='isot', scale='utc')
+        mjd = date.mjd
+        tstamp = date.unix
+
+        spectrum_wl   = spectrafits['WAVELENGTH'].data#[fiber_num] # Angstrom
+        ##### WARNING : qframe -> FLUX in e-/Angstrom
+        spectrum_flux = spectrafits['FLUX'].data#[fiber_num] # -> e-/Angstrom
+        spectrum_flux *= np.gradient(spectrum_wl, axis=1) # -> e-
+    
+        spectrum_ivar = spectrafits['IVAR'].data#[fiber_num]
+    
+        # Filtering: 
+        
+        badpixsel = spectrum_ivar <= 0.
+        goodpixsel = ~badpixsel
+        nbadpix = np.sum(badpixsel)
+        print("        bad pixels (IVAR<=0) = ", nbadpix)
+        
+        spectrum_flux = np.interp(spectrum_wl, spectrum_wl[goodpixsel],
+                                  spectrum_flux[goodpixsel])
+    
+        # Sum
+    
+        # integrated_flux_total = float(spectrum_flux.sum() / exptime)
+    
+        restrictedsel = (
+            ( restricted_wlrange[arm]['min'] < spectrum_wl ) &
+            ( spectrum_wl < restricted_wlrange[arm]['max'] ) )
+    
+        # integrated_flux_limited = float(
+        #     spectrum_flux[restrictedsel].sum() / exptime)
+
+        median_flux_limited = float(
+            np.median(spectrum_flux[restrictedsel]) / exptime)  # e-/s
+
+        # flux_median = np.median(spectrafits['FLUX'].data) # barbarian
+        flux_median = median_flux_limited
+
+        print(expnum, arm, exptime, date, mjd, tstamp, flux_median)
+            
+        results.append(#
+            (expnum,
+             mjd,
+             tstamp,
+             arm,
+             exptime,
+             flux_median))
+            
+datatypes = [
+    ('expnum', int),
+    ('mjd', float),
+    ('tstamp', float),
+    ('arm', 'S8'),
+    ('exptime', float),
+    ('flux_median', float) #,
+    # ('flux_limited', float) # limited range
+]
+
+results = np.array(results,dtype = datatypes)
+
+np.save("twiglights-flux-evolution-20191026.npy", results)
+ 
+# --------------------------------------------
+
+from scipy.optimize import curve_fit
+import pylab as pb
+
+def func(x, a, b):
+    return a * np.exp(-b*x)
+
+# # cm = pb.cm.get_cmap('RdYlBu')
+# cm = pb.cm.get_cmap('coolwarm')
+
+pb.figure()
+pb.title("DESI spectrograph camera: twilight median level (e-/s)")
+
+# dbase = Time("2019-10-24 01:05:23", format='iso', scale='utc') # Sun -5° on evening 2019-10-23 local
+
+# dbase = Time("2019-10-24 00:45:19", format='iso', scale='utc') # Sunset on evening 2019-10-23 local
+dbase = Time("2019-10-26 00:43:16.51", format='iso', scale='utc') # Sunset on evening 2019-10-23 local
+tbase = dbase.unix
+
+for arm in arms:
+    # pb.figure(arm.decode('ascii'))
+    # pb.title("DESI spectrograph camera " + 
+    #          arm.decode('ascii') + ": twilight median level (e-/s)")
+    sel = (results['arm'] == arm) # & (results['expnum'] == 18084)
+    
+    #     vmin = np.median(results[sel]['flux_limited']) - 3 * results[sel]['flux_limited'].std()
+    #     vmax = np.median(results[sel]['flux_limited']) + 3 * results[sel]['flux_limited'].std()
+
+    times = ( results[sel]['tstamp'] - tbase ) 
+    fluxes = results[sel]['flux_median']
+
+    # pb.xlabel("Time [seconds]")
+    # pb.ylabel("Median Fiber Flux [e-/s]")
+    fig = pb.scatter(times, fluxes,
+                     marker='+', color = colors[arm], 
+                     label = ( arm.decode('ascii') + ": " + "twilight level" ) )
+
+    sel_fit = sel
+    if arm == b'Z3':
+        print("for Z3 removing...")
+        print(results[sel]['expnum'])
+        # sel_fit = sel_fit & (results['expnum'] >= 20205)
+        sel_fit = sel_fit & (results['expnum'] < 20988)
+        print(results[sel_fit]['expnum'])
+
+    print("ARM = ", arm)
+
+    times_fit = ( results[sel_fit]['tstamp'] - tbase ) 
+    fluxes_fit = results[sel_fit]['flux_median']
+
+    popt, pcov = curve_fit(func, times_fit, fluxes_fit, p0=[10000., 1./100.])
+    # halfperiod = 60.0* np.log(2.)/popt[1]
+    halfperiod = np.log(2.)/popt[1]
+    print("Fit results for ", arm, popt, pcov)
+    xx = np.linspace(times.min(), times.max(), 100)
+    yy = func(xx, *popt)
+    pb.plot(xx, yy, color = colors[arm], label=( arm.decode('ascii') + ": " + 
+                                                 ( "exp. fit $t_{1/2}$ = %5.3f s" % halfperiod ) ))
+
+# pb.xlabel("Time since Sunset on 2019-10-23 local [seconds]")
+pb.xlabel("Time since Sunset on 2019-10-25 local [seconds]")
+pb.ylabel("Median Fiber Flux [e-/s]")
+
+handles, labels = pb.gca().get_legend_handles_labels()
+order = [3,4,5,0,1,2]
+pb.legend([handles[idx] for idx in order],[labels[idx] for idx in order])
+# pb.legend()
+    
+pb.show()
+

@@ -1,0 +1,208 @@
+#! /usr/bin/env python3
+# -*- Encoding: utf-8 -*-
+#
+# DESI - generating an optimal twilight sequence 
+#
+# Author: Laurent Le Guillou <llg@lpnhe.in2p3.fr>
+# Date: 2019-10-24
+#
+# ----------------------------------------------------------------------------------------
+#
+# usage: make-twilight-sequence [YYYY-MM-DD]
+#
+#     Generate the JSON sequence file for the DESI twilight sequence
+#     for a given date, or, by default, for the next sunset.
+#     The output will be saved in 'twilight-evening-YYYYMMDD.json'.
+#
+# ----------------------------------------------------------------------------------------
+
+import sys
+import getopt
+import numpy as np
+import time
+import datetime
+import ephem
+import json
+
+# --------- Kitt Peak site ---------------------------------------------------------------
+
+# Make an observer
+desi = ephem.Observer()
+
+# Kitt Peak lat = 31.9634, long = -111.6003
+desi.lon  = str(-111.6003)  # Note that lon should be in string format
+desi.lat  = str(31.9634)    # Note that lat should be in string format
+desi.elev = 2120.
+
+#To get U.S. Naval Astronomical Almanac values, use these settings
+desi.pressure = 0
+desi.horizon = '-0:34'
+
+# --------- Default parameters -----------------------------------------------------------
+
+t_0 = 0.0 # Sunset
+halftime = 156.0 # seconds, taken from R3
+cte = np.log(2) / halftime
+t_overhead = 57.0 # seconds
+
+A = 25000 # e-/s  # at Sunset in R3
+target = 5000 # e-
+
+wait = 900.0 # time to wait before starting (after exact sunset)
+# zeros = 10  # number of zero frames to do first
+zeros = 0  # number of zero frames to do first
+
+max_exptime = 360. # sec -> 6 min
+
+# --------- Parse command line arguments -------------------------------------------------
+
+def usage():
+    print(file=sys.stderr)
+    print("usage: make-twilight-sequence [YYYY-MM-DD]", file=sys.stderr)
+    print(file=sys.stderr)
+    print("    Generate the JSON file for the DESI twilight sequence", file=sys.stderr)
+    print("    for a given date, or, by default, for the next sunset.", file=sys.stderr)
+    print("    The output will be saved in 'twilight-evening-YYYYMMDD.json'.", file=sys.stderr)
+    print(file=sys.stderr)
+    
+try:
+    opts, args = \
+        getopt.getopt(sys.argv[1:], "hvo:", \
+                          ["help", "verbose", "evening", "morning"])
+except getopt.GetoptError:
+    # print help information and exit
+    usage()
+    sys.exit(1)
+        
+# print opts
+# print args
+
+verbose = False
+evening = True
+
+for option, arg in opts:
+    if option in ("-h", "--help"):
+        usage()
+        sys.exit(0)
+    if option in ("-v", "--verbose"):
+        verbose = True
+    if option in ("-e", "--evening"):
+        evening = True
+    if option in ("-m", "--morning"):
+        evening = False
+
+# Default is now
+obsdate = datetime.datetime.utcnow()
+
+if len(args) >= 2:
+    usage()
+    sys.exit(1)
+    
+
+if len(args) == 1:
+    obsdate_str = args[0]
+    parts = obsdate_str.split("-")
+    if len(parts) < 3:
+        print("error: invalid date", file=sys.stderr)
+        usage()
+        sys.exit(2)
+    try:
+        obsdate = datetime.datetime(int(parts[0]), int(parts[1]), int(parts[2]), 0, 0, 0)
+    except ValueError:
+        print("error: invalid date", file=sys.stderr)
+        usage()
+        sys.exit(2)
+
+        
+# --------- Compute exposure times and timing --------------------------------------------
+
+# PyEphem takes and returns only UTC time
+desi.date = str(obsdate)
+# desi.date = "2019-10-23 08:00:00"
+
+# sunrise=desi.previous_rising(ephem.Sun()) #Sunrise
+# noon   =desi.next_transit   (ephem.Sun(), start=sunrise) #Solar noon
+next_sunset = desi.next_setting(ephem.Sun()) # Sunset
+# print("Next Sunset = ", sunset, " UTC")
+
+sunset = next_sunset.datetime()
+
+print("Generating twilight exposures for next sunset at Kitt Peak on", sunset)
+
+start = t_0 + zeros * t_overhead + wait
+ts = [start]
+
+start_time = sunset + datetime.timedelta(0,start)
+
+exptimes = []
+
+
+def get_exptime(cte, A, target):
+    a = cte * target*np.exp(cte*t_i) / A
+    if a >= 1.0:
+        return None
+    return - (1./cte) * np.log(1.0 - a)
+
+
+while True: # max exposure time
+    t_i = ts[-1] # last one
+    exptime = get_exptime(cte, A, target)
+    if exptime == None:
+        break
+    if exptime > max_exptime:
+        break
+    exptimes.append(exptime)
+    t_i_plus_one = t_i + exptime + t_overhead
+    ts.append(t_i_plus_one)
+
+print("Twilight exposure durations = ", exptimes)
+print("Twilight observation times = ", ts)
+
+# --------- Produce the DESI json script -------------------------------------------------
+
+script = []
+exposure = {"sequence": "Spectrographs",
+            'flavor':'science',
+            'exptime':0.0,
+            'program':'Evening Twilights %s' % str(sunset.date())}
+
+outfile = 'twilight-evening-%s.json' % ( str(sunset.date()).replace("-", "") )
+
+# # Wait
+# e = dict({"sequence": "Pause", "delay": wait})
+# script.append(e)
+
+# Zeros
+if zeros > 0:
+    # for i in range(zeros):
+    e = dict(exposure)
+    e['flavor'] = 'zero'
+    e['obstype'] = 'zero'
+    e['count'] = zeros
+    del e['exptime']
+    e['program'] += ' (zero)'
+    script.append(e)
+
+# Twilights
+first = True
+for exptime in exptimes:
+    e = dict(exposure)
+    e['flavor'] = 'science'
+    e['obstype'] = 'twilight'
+    e['exptime'] = round(exptime, 2)
+    e['program'] += ' (twilight %5.2fs)' % exptime
+    if first:
+        e['waituntil'] = "%s" % start_time.isoformat()  ## .replace(" ", "T")
+        first = False
+    #
+    script.append(e)
+
+print("Writing DESI sequence JSON file for evening of %s UTC" % sunset, "...")
+outf = open(outfile, 'w')
+json.dump(script, outf, indent=2)
+outf.close()
+print("Writing DESI sequence JSON file for evening of %s UTC" % sunset, "done.")
+
+print("\nThe generated sequence [%s] should start exactly at %s UTC [Unix=%f]." %
+      ( outfile, start_time, 
+        time.mktime(start_time.timetuple()) ) )
