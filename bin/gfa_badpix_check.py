@@ -2,6 +2,7 @@
 
 import argparse
 import astropy.io.fits as fits
+from astropy.table import Table
 import glob
 import numpy as np
 import os
@@ -38,6 +39,11 @@ def _get_file_list(night, basedir, min_expid, max_expid):
 
     return flist
 
+def _expid_from_fname(fname):
+    _fname = os.path.split(fname)[1]
+    expid = int(_fname[4:12])
+
+    return expid
 
 if __name__ == "__main__":
     descr = 'print information about GFA prescan/overscan bad pixels'
@@ -88,10 +94,30 @@ if __name__ == "__main__":
 
     print('filename', 'extname', 'npix_bad')
     print('====================================')
+
+    result = []
     for i, fname in enumerate(flist):
         for extname in _extnames:
             im = fits.getdata(fname, extname=extname)
             nbad = n_fake_bad(im, args.thresh)
             print(fname, extname, nbad)
+            result.append((args.night[0], fname, _expid_from_fname(fname), extname, nbad))
         if i != (len(flist)-1):
             print('-')
+
+    if args.outname is not None:
+        assert(not os.path.exists(outname))
+        night = [t[0] for t in result]
+        fname = [t[1] for t in result]
+        expid = [t[2] for t in result]
+        extname = [t[3] for t in result]
+        npix_bad = [t[4] for t in result]
+
+        t = Table()
+        t['NIGHT'] = night
+        t['FNAME'] = fname
+        t['EXPID'] = expid
+        t['EXTNAME'] = extname
+        t['NPIX_BAD'] = npix_bad
+
+        t.write(outname, format='fits')
