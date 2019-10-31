@@ -111,17 +111,12 @@ if __name__ == "__main__":
 
     if args.outname is not None:
         assert(not os.path.exists(outname))
-        night = [t[0] for t in result]
-        fname = [t[1] for t in result]
-        expid = [t[2] for t in result]
-        extname = [t[3] for t in result]
-        npix_bad = [t[4] for t in result]
 
         t = Table()
-        t['NIGHT'] = night
-        t['FNAME'] = fname
-        t['EXPID'] = expid
-        t['EXTNAME'] = extname
-        t['NPIX_BAD'] = npix_bad
+        t['NIGHT'] = [t[0] for t in result]
+        t['FNAME'] = [t[1] for t in result]
+        t['EXPID'] = [t[2] for t in result]
+        t['EXTNAME'] = [t[3] for t in result]
+        t['NPIX_BAD'] = [t[4] for t in result]
 
         t.write(outname, format='fits')
