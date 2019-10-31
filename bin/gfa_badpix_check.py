@@ -98,7 +98,11 @@ if __name__ == "__main__":
     result = []
     for i, fname in enumerate(flist):
         for extname in _extnames:
-            im = fits.getdata(fname, extname=extname)
+            # try/except handles case where not all GFA cameras present in an exposure
+            try:
+                im = fits.getdata(fname, extname=extname)
+            except:
+                continue
             nbad = n_fake_bad(im, args.thresh)
             print(fname, extname, nbad)
             result.append((args.night[0], fname, _expid_from_fname(fname), extname, nbad))
