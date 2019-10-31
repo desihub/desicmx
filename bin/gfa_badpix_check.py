@@ -70,7 +70,7 @@ if __name__ == "__main__":
     parser.add_argument('--thresh', default=10000, type=int,
                         help='pixel value threshold for badness')
 
-    parser.add_argument('--outname', default='gfa_badpix.fits',
+    parser.add_argument('--outname', default=None,
                         help='output file name for results summary file')
 
     args = parser.parse_args()
