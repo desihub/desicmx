@@ -9,9 +9,6 @@ import os
 
 extnames = ['GUIDE0', 'FOCUS1', 'GUIDE2', 'GUIDE3', 'FOCUS4', 'GUIDE5', 'FOCUS6', 'GUIDE7', 'GUIDE8', 'FOCUS9']
 
-def fname_to_expid():
-    print('blat')
-
 def n_fake_bad(im, thresh):
     # calculate number of bad pixels in overscan/prescan regions for a single-camera image
     n = np.sum(im[:, 0:50] > thresh) + np.sum(im[:, 1074:1174] > thresh) + np.sum(im[:, 2198:2248] > thresh)
@@ -23,6 +20,12 @@ def check_valid_extname(extname):
         print('invalid extension name specified')
         assert(False)
 
+def _expid_from_fname(fname):
+    _fname = os.path.split(fname)[1]
+    expid = int(_fname[4:12])
+
+    return expid
+
 def _get_file_list(night, basedir, min_expid, max_expid):
 
     assert(min_expid <= max_expid)
@@ -31,19 +34,13 @@ def _get_file_list(night, basedir, min_expid, max_expid):
  
     _flist = [os.path.split(f)[1] for f in flist]
     
-    expid = np.array([int(f[4:12]) for f in _flist])
+    expid = np.array([_expid_from_fname(f) for f in _flist])
 
     flist = np.array(flist)
 
     flist = flist[(expid >= min_expid) & (expid <= max_expid)]
 
     return flist
-
-def _expid_from_fname(fname):
-    _fname = os.path.split(fname)[1]
-    expid = int(_fname[4:12])
-
-    return expid
 
 if __name__ == "__main__":
     descr = 'print information about GFA prescan/overscan bad pixels'
