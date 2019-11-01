@@ -46,7 +46,7 @@ def _process_pixel_data(data, thresh):
     # data could be either a 2D image or 3D guider image cube
     sh = data.shape
     if len(sh) == 2:
-        nbad = n_fake_bad(data, thresh)
+        nbad = [n_fake_bad(data, thresh)]
     else:
         nbad = [n_fake_bad(data[i, :, :], thresh) for i in range(sh[0])]
 
@@ -111,8 +111,9 @@ if __name__ == "__main__":
             except:
                 continue
             nbad = _process_pixel_data(data, args.thresh)
-            print(fname, extname, nbad)
-            result.append((args.night[0], fname, _expid_from_fname(fname), extname, nbad))
+            this_result = [(args.night[0], fname, _expid_from_fname(fname), extname, nbad[frame], frame) for frame in range(len(nbad))]
+            print(fname, extname, nbad[0])
+            result += this_result
         if i != (len(flist)-1):
             print('-')
 
@@ -125,6 +126,7 @@ if __name__ == "__main__":
         t['EXPID'] = [t[2] for t in result]
         t['EXTNAME'] = [t[3] for t in result]
         t['NPIX_BAD'] = [t[4] for t in result]
+        t['FRAME'] = [t[5] for t in result]
         t['THRESH_ADU'] = args.thresh
 
         t.write(outname, format='fits')
