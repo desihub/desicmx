@@ -115,5 +115,6 @@ if __name__ == "__main__":
         t['EXPID'] = [t[2] for t in result]
         t['EXTNAME'] = [t[3] for t in result]
         t['NPIX_BAD'] = [t[4] for t in result]
+        t['THRESH_ADU'] = args.thresh
 
         t.write(outname, format='fits')
