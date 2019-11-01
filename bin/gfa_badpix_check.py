@@ -42,6 +42,16 @@ def _get_file_list(night, basedir, min_expid, max_expid):
 
     return flist
 
+def _process_pixel_data(data, thresh):
+    # data could be either a 2D image or 3D guider image cube
+    sh = data.shape
+    if len(sh) == 2:
+        nbad = n_fake_bad(data, thresh)
+    else:
+        nbad = [n_fake_bad(data[i, :, :], thresh) for i in range(sh[0])]
+
+    return nbad
+
 if __name__ == "__main__":
     descr = 'print information about GFA prescan/overscan bad pixels'
     parser = argparse.ArgumentParser(description=descr)
@@ -90,17 +100,17 @@ if __name__ == "__main__":
         _extnames = extnames
 
     print('filename', 'extname', 'npix_bad')
-    print('====================================')
+    print('='*35)
 
     result = []
     for i, fname in enumerate(flist):
         for extname in _extnames:
             # try/except handles case where not all GFA cameras present in an exposure
             try:
-                im = fits.getdata(fname, extname=extname)
+                data = fits.getdata(fname, extname=extname)
             except:
                 continue
-            nbad = n_fake_bad(im, args.thresh)
+            nbad = _process_pixel_data(data, args.thresh)
             print(fname, extname, nbad)
             result.append((args.night[0], fname, _expid_from_fname(fname), extname, nbad))
         if i != (len(flist)-1):
