@@ -1,9 +1,21 @@
 from configparser import ConfigParser
 from glob import glob
 
+from astropy.table import Table
+from astropy.io import fits
+
 class DitherSequence:
+    """Access class to dithering sequence data from nightwatch or redux
+    files."""
 
     def __init__(self, inifile):
+        """Parse a configuration file in INI format.
+
+        Parameters
+        ----------
+        inifile : str
+            Name of INI file with configuration data.
+        """
 
         config = ConfigParser()
         config.read(inifile)
@@ -14,9 +26,21 @@ class DitherSequence:
         self._filetype = sequence['filetype']
         self._date = sequence['date']
         self._exposures = sorted([int(e) for e in sequence['exposures'].split()])
+
+        # Extract the list of exposures on disk.
         self._exposure_files = self._getfilenames()
 
+        # Construct fiber data.
+
     def _getfilenames(self):
+        """Return a list of exposures and filenames given an INI configuration.
+
+        Returns
+        -------
+        exfiles : dict
+            Dictionary of exposure numbers and corresponding nightwatch
+            qcframe or redux sframe FITS files.
+        """
 
         # Set up the path and file prefix depending on the filetype.
         if self._filetype == 'nightwatch':
