@@ -30,12 +30,15 @@ class DitherSequence:
         self._date = sequence['date']
         self._exposures = sorted([int(e) for e in sequence['exposures'].split()])
 
+        coords = config['coordinates']
+        self._deltara = [float(d) for d in coords['deltara'].split()]
+        self._deltadec = [float(d) for d in coords['deltadec'].split()]
+
         # Extract the list of exposures on disk.
         self._exposure_files = self._getfilenames()
 
         # Construct fiber output.
         self._exposure_table = self._buildtable()
-        self._exposure_table.write('test.fits', overwrite=True)
 
     def _getfilenames(self):
         """Return a list of exposures and filenames given an INI configuration.
@@ -84,12 +87,15 @@ class DitherSequence:
 
         tabrows = []
 
-        for expid, exfiles in self._exposure_files.items():
+        for i, (expid, exfiles) in enumerate(self._exposure_files.items()):
             specflux_b, specflux_r, specflux_z = [], [], []
             tab = None
 
             if len(exfiles) == 0:
                 continue
+
+            dra  = self._deltara[i]
+            ddec = self._deltadec[i]
 
             print(expid)
             for exfile in exfiles:
@@ -113,8 +119,8 @@ class DitherSequence:
 
                 camera = fluxhead['CAMERA'][0].upper()
 
-                for i, fiber_id in enumerate(fiber):
-                    flux = fluxdata[i]
+                for j, fiber_id in enumerate(fiber):
+                    flux = fluxdata[j]
                     if camera == 'B':
                         specflux_b.append(np.trapz(flux, wave))
                     elif camera == 'R':
@@ -122,25 +128,37 @@ class DitherSequence:
                     else:
                         specflux_z.append(np.trapz(flux, wave))
 
-            for j in range(len(fiber)):
+            for k in range(len(fiber)):
                 tabrows.append((expid,
-                                target_id[j], target_ra[j], target_dec[j],
-                                fiber[j], objtype[j], flux_r[j],
-                                specflux_b[j], specflux_r[j], specflux_z[j],
-                                x[j], y[j]))
-
-            break
+                                target_id[k], target_ra[k], target_dec[k],
+                                fiber[k], objtype[k], flux_r[k],
+                                specflux_b[k], specflux_r[k], specflux_z[k],
+                                dra, ddec,
+                                x[k], y[k]))
 
         tab = Table(rows=tabrows,
                     names=('EXPID', 'TARGETID', 'TARGET_RA', 'TARGET_DEC',
                            'FIBER', 'OBJTYPE', 'FLUX_R',
                            'SPECFLUX_B', 'SPECFLUX_R', 'SPECFLUX_Z',
+                           'DELTA_X_ARCSEC', 'DELTA_Y_ARCSEC',
                            'XFOCAL', 'YFOCAL'),
                     meta={'EXTNAME' : 'DITHER'})
 
         return tab
 
+    def save(self, filename, overwrite=True):
+        """Save exposure table to a FITS file.
+
+        Parameters
+        ----------
+        filename : str
+            Output filename.
+        """
+        self._exposure_table.write(filename, overwrite=overwrite)
+
     def __str__(self):
+        """String representation of the exposure sequence.
+        """
         output = []
         for ex, files in self._exposure_files.items():
             filenames = '- exposure {:08d}\n'.format(ex)
