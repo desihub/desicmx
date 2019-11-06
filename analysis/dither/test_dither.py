@@ -7,6 +7,6 @@ parser.add_argument('-c', '--config', dest='config', default='dither.ini',
 args = parser.parse_args()
 
 ditherseq = DitherSequence(args.config)
-print(ditherseq._exposures)
-print(ditherseq._exposure_files)
-print(ditherseq)
+#print(ditherseq._exposures)
+#print(ditherseq._exposure_files)
+#print(ditherseq)
