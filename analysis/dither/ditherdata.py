@@ -102,8 +102,16 @@ class DitherSequence:
                 print(exfile)
                 hdu = fits.open(exfile)
 
-                # Assume sframe format.
+                # The following tables are present in the redux sframes and the
+                # nightwatch qcframes.
                 wave = hdu['WAVELENGTH'].data
+
+                # However, in the nightwatch files the wavelength data are a
+                # table of size nfiber x nwavelength.
+                if self._filetype == 'nightwatch':
+                    if wave.ndim > 1:
+                        wave = wave[0]
+
                 fluxhead = hdu['FLUX'].header
                 fluxdata = hdu['FLUX'].data
                 ivardata = hdu['IVAR'].data
