@@ -1,18 +1,11 @@
 [
   {
     "sequence": "Spectrographs",
-    "flavor": "zero",
-    "program": "Evening Twilights 2019-10-27 (zero)",
-    "obstype": "zero",
-    "count": 0
-  },
-  {
-    "sequence": "Spectrographs",
     "flavor": "science",
     "exptime": 11.18,
     "program": "Evening Twilights 2019-10-27 (twilight 11.18s)",
     "obstype": "twilight",
-    "waituntil": "\"2019-10-27T00:57:16.654024\""
+    "waituntil": "2019-10-27 00:57:16.654024"
   },
   {
     "sequence": "Spectrographs",

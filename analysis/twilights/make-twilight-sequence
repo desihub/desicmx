@@ -48,11 +48,11 @@ t_overhead = 57.0 # seconds
 A = 25000 # e-/s  # at Sunset in R3
 target = 5000 # e-
 
-wait = 900.0 # time to wait before starting (after exact sunset)
+wait = 450.0 # time to wait before starting (after exact sunset)
 # zeros = 10  # number of zero frames to do first
 zeros = 0  # number of zero frames to do first
 
-max_exptime = 360. # sec -> 6 min
+max_exptime = 600. # sec -> 6 min
 
 # --------- Parse command line arguments -------------------------------------------------
 
@@ -192,7 +192,7 @@ for exptime in exptimes:
     e['exptime'] = round(exptime, 2)
     e['program'] += ' (twilight %5.2fs)' % exptime
     if first:
-        e['waituntil'] = "%s" % start_time.isoformat()  ## .replace(" ", "T")
+        e['waituntil'] = "%s" % start_time.isoformat().replace("T", " ")  ## .replace(" ", "T")
         first = False
     #
     script.append(e)
