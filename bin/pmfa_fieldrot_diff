@@ -1,0 +1,128 @@
+#!/usr/bin/env python
+
+import os, sys, tarfile, tempfile, glob
+import numpy as np
+from astropy.table import Table
+import pylab as P
+
+#- Provide directory to raw data files; must contain fiberassign and pm-*-logs.tar
+indir = sys.argv[1]
+indir = os.path.normpath(indir)
+expid = int(os.path.basename(indir))
+night = int(os.path.basename(os.path.dirname(indir)))
+
+pmtarfile = indir+'/pm-{:08d}-logs.tar'.format(expid)
+assert os.path.exists(pmtarfile)
+
+fafile = glob.glob(indir+'/fiberassign*.fits')[0]
+
+tileid = int(os.path.basename(fafile).split('-')[1][0:6])
+print('night {} expid {} tileid {}'.format(night, expid, tileid))
+
+#- Unpack FA positioners
+pmposfile = 'data/platemaker/test/{expid}/positioner-pos-{expid}.2.dat'.format(expid=expid)
+if not os.path.exists(pmposfile):
+    print('extracting {} from {}'.format(pmposfile, pmtarfile))
+    t = tarfile.open(pmtarfile)
+    t.extract(pmposfile)
+else:
+    print('using pre-extracted {}'.format(pmposfile))
+
+#- read platemaker (pm) and fiberassign (fa) files
+pm = Table.read(pmposfile, format='ascii.commented_header')
+fa = Table.read(fafile, 'FIBERASSIGN')
+
+#- Trim to just POS (not ETC) and sort by LOCATION = 1000*PETAL_LOC + DEVICE_LOC
+pm = pm[pm['DEVICE_TYPE'] == 'POS']
+pm['LOCATION'] = 1000*pm['PETAL_LOC'] + pm['DEVICE_LOC']
+pm.sort('LOCATION')
+
+#- Also sort fa by location so the two should match
+fa.sort('LOCATION')
+
+#- shorthand
+fa_x = np.asarray(fa['FIBERASSIGN_X'], dtype=float)
+fa_y = np.asarray(fa['FIBERASSIGN_Y'], dtype=float)
+pm_x = np.asarray(pm['XFPA'])
+pm_y = np.asarray(pm['YFPA'])
+
+#- Remove large xy offsets first
+offset_x = np.mean(pm_x - fa_x)
+offset_y = np.mean(pm_y - fa_y)
+print('platemaker - fiberassign CS5 offsets:')
+print('  offset_x = {:8.5f} mm'.format(offset_x))
+print('  offset_y = {:8.5f} mm'.format(offset_y))
+
+fa_x += offset_x
+fa_y += offset_y
+
+def rotxy(x, y, theta):
+    xx = x * np.cos(theta) - y * np.sin(theta)
+    yy = x * np.sin(theta) + y * np.cos(theta)
+    return xx, yy
+
+def scanrot(rotarcsec, fa_x, fa_y, pm_x, pm_y):
+    rotrms = np.zeros(len(rotarcsec))
+    for i, rot in enumerate(rotarcsec):
+        theta = np.radians(rot/3600)
+        x, y = rotxy(fa_x, fa_y, theta)
+        d2 = (pm_x - x)**2 + (pm_y - y)**2
+        rotrms[i] = np.sqrt(np.mean(d2))
+    
+    return rotrms
+
+#- Do a brute force search for minimum then fit quadratic to avoid
+#- dependency on scipy minimizers
+#- (there is probably a better way to do this)
+
+#- Coarse pass
+rotarcsec = np.arange(-500, 501, 25)
+rotrms = scanrot(rotarcsec, fa_x, fa_y, pm_x, pm_y)
+
+#- Fine pass
+i = np.argmin(rotrms)
+a = rotarcsec[i]
+rotarcsec = np.arange(a-25, a+26, 5)
+rotrms = scanrot(rotarcsec, fa_x, fa_y, pm_x, pm_y)
+
+#- Final pass
+i = np.argmin(rotrms)
+a = rotarcsec[i]
+rotarcsec = np.arange(a-10, a+11, 2)
+rotrms = scanrot(rotarcsec, fa_x, fa_y, pm_x, pm_y)
+
+#- Now we might be zoomed in enough to do a decent quad fit
+c = np.polyfit(rotarcsec, rotrms, 2)
+rotmin = -c[1] / (2*c[0])
+rotmin
+
+print('Rotate hexapod by {:.1f} arcsec (relative to current position, not absolute)'.format(rotmin))
+
+#- Make a plot
+P.figure(figsize=(8.5,4))
+P.subplot(121)
+P.plot(rotarcsec, 1000*rotrms, '.')
+xx = np.linspace(rotarcsec[0], rotarcsec[-1])
+P.plot(xx, 1000*np.polyval(c, xx), '-')
+P.axvline(rotmin, color='k', alpha=0.5)
+P.xlabel('rotation [arcsec]')
+P.ylabel('PM-FA xy residual RMS [um')
+
+P.subplot(122)
+x, y = rotxy(fa_x, fa_y, np.radians(rotmin/3600))
+dx = pm_x - x
+dy = pm_y - y
+dr = 1000*np.sqrt(dx**2 + dy**2)
+P.quiver(pm_x, pm_y, dx, dx, dr)
+P.title('residual offsets [um]')
+P.colorbar()
+
+P.tight_layout()
+
+P.savefig('pmfa-fieldrot-{:08d}.png'.format(expid))
+
+
+
+
+
+
