@@ -194,7 +194,8 @@ class DitherSequence:
                            'SPECTROFLUX', 'SPECTROFLUX_IVAR', 'CAMERA',
                            'DELTA_X_ARCSEC', 'DELTA_Y_ARCSEC',
                            'XFOCAL', 'YFOCAL'),
-                    meta={'EXTNAME' : 'DITHER'})
+                    meta={'EXTNAME' : 'DITHER',
+                          'TILEID' : '{}'.format(self._tileid)})
 
         return tab
 
