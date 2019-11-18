@@ -40,13 +40,20 @@ class DitherSequence:
 
         if 'coordinates' in config:
             coords = config['coordinates']
+
+            # Positioner offset file from Sarah E.
+            self._dither = ascii.read(coords['ditherfile'])
+
+            # Define coordinate system.
             self._wcs = fits.getdata(coords['wcsfile'], 2)
             self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
-            self._dither = ascii.read(coords['ditherfile'])
             self._central_exposure = int(sequence['centralexposure'])
             expnum = [int(fn.split('-')[1]) for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
             self._central_wcs = self._wcs[centralind]
+
+            # Set the Tile ID for the output metadata.
+            self._tileid = int(coords['tile'])
         else:
             raise ValueError('Must set coordinates via wcsfile '
                              'and ditherfile in config')
@@ -253,7 +260,7 @@ class DitherSequence:
     def __str__(self):
         """String representation of the exposure sequence.
         """
-        output = []
+        output = ['Tile ID {}'.format(self._tileid)]
         for ex, files in self._exposure_files.items():
             filenames = '- exposure {:08d}\n'.format(ex)
             for f in files:
