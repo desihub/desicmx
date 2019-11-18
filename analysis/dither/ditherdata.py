@@ -12,7 +12,7 @@ class DitherSequence:
     """Access class to dithering sequence data from nightwatch or redux
     files."""
 
-    def __init__(self, inifile):
+    def __init__(self, inifile, dry_run, output):
         """Parse a configuration file in INI format.
 
         Parameters
@@ -24,6 +24,9 @@ class DitherSequence:
         config = ConfigParser()
         config.read(inifile)
         sequence = config['dithersequence']
+
+        # Set up the output.
+        self._output = output
 
         # Set up the file type and exposure sequence.
         self._location = sequence['location']
@@ -50,8 +53,9 @@ class DitherSequence:
         # Extract the list of exposures on disk.
         self._exposure_files = self._getfilenames()
 
-        # Construct fiber output.
-        self._exposure_table = self._buildtable()
+        if not dry_run:
+            # Construct fiber output.
+            self._exposure_table = self._buildtable()
 
     def _getfilenames(self):
         """Return a list of exposures and filenames given an INI configuration.
@@ -199,14 +203,18 @@ class DitherSequence:
             raise ValueError('Something confusing with wcs list')
         return twcs
 
-    def save(self, filename, overwrite=True):
+    def save(self, filename=None, overwrite=True):
         """Save exposure table to a FITS file.
 
         Parameters
         ----------
         filename : str
             Output filename.
+        overwrite : bool
+            If true, clobber an existing file with the same name.
         """
+        if filename is None:
+            filename = self._output
         self._exposure_table.write(filename, overwrite=overwrite)
 
     def rearrange_table(self):
