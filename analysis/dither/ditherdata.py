@@ -19,6 +19,10 @@ class DitherSequence:
         ----------
         inifile : str
             Name of INI file with configuration data.
+        dry_run : bool
+            If true, do not process input files.
+        output : str
+            Name of output file (FITS format).
         """
 
         config = ConfigParser()
@@ -34,20 +38,17 @@ class DitherSequence:
         self._date = sequence['date']
         self._exposures = sorted([int(e) for e in sequence['exposures'].split()])
 
-        if 'coordinates' in sequence:
-            coords = sequence['coordinates']
-            self._deltara = [float(d) for d in coords['deltara'].split()]
-            self._deltadec = [float(d) for d in coords['deltadec'].split()]
-        elif 'wcsfile' in sequence:
-            self._wcs = fits.getdata(sequence['wcsfile'], 2)
+        if 'coordinates' in config:
+            coords = config['coordinates']
+            self._wcs = fits.getdata(coords['wcsfile'], 2)
             self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
-            self._dither = ascii.read(sequence['ditherfile'])
+            self._dither = ascii.read(coords['ditherfile'])
             self._central_exposure = int(sequence['centralexposure'])
             expnum = [int(fn.split('-')[1]) for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
             self._central_wcs = self._wcs[centralind]
         else:
-            raise ValueError('must set either coordinates or wcsfile '
+            raise ValueError('Must set coordinates via wcsfile '
                              'and ditherfile in config')
 
         # Extract the list of exposures on disk.
@@ -141,30 +142,26 @@ class DitherSequence:
 
                 camera = fluxhead['CAMERA'][0].upper()
 
-                if getattr(self, '_deltara', None) is not None:
-                    dra  = self._deltara[i]*np.ones(len(fiber))
-                    ddec = self._deltadec[i]*np.ones(len(fiber))
-                else:
-                    dfiberra = (
-                        self._dither['DELTA_RA(ORIGINAL-DITHERED) [degrees]'])
-                    dfiberdec = (
-                        self._dither['DELTA_DEC(ORIGINAL-DITHERED) [degrees]'])
-                    if not np.all(self._dither['FIBER'] ==
-                                  np.arange(len(self._dither))):
-                        raise ValueError('unexpected shape of dither file')
-                    dfiberra = dfiberra[fiber]
-                    dfiberdec = dfiberdec[fiber]
-                                  
-                                  
-                    dfiberra = dfiberra*60*60
-                    dfiberdec = dfiberdec*60*60
-                    wcs = self.lookup_wcs(fluxhead['MJD-OBS'])
-                    centralwcs = self._central_wcs
-                    dtelra = (wcs['cenra'][1]-centralwcs['cenra'][1])
-                    dtelra *= np.cos(np.radians(centralwcs['cendec'][2]))
-                    dteldec = wcs['cendec'][1]-centralwcs['cendec'][1]
-                    dra = dfiberra + dtelra
-                    ddec = dfiberdec + dteldec
+                dfiberra = (
+                    self._dither['DELTA_RA(ORIGINAL-DITHERED) [degrees]'])
+                dfiberdec = (
+                    self._dither['DELTA_DEC(ORIGINAL-DITHERED) [degrees]'])
+                if not np.all(self._dither['FIBER'] ==
+                              np.arange(len(self._dither))):
+                    raise ValueError('unexpected shape of dither file')
+                dfiberra = dfiberra[fiber]
+                dfiberdec = dfiberdec[fiber]
+                              
+                              
+                dfiberra = dfiberra*60*60
+                dfiberdec = dfiberdec*60*60
+                wcs = self.lookup_wcs(fluxhead['MJD-OBS'])
+                centralwcs = self._central_wcs
+                dtelra = (wcs['cenra'][1]-centralwcs['cenra'][1])
+                dtelra *= np.cos(np.radians(centralwcs['cendec'][2]))
+                dteldec = wcs['cendec'][1]-centralwcs['cendec'][1]
+                dra = dfiberra + dtelra
+                ddec = dfiberdec + dteldec
 
                 for j, fiber_id in enumerate(fiber):
                     flux = fluxdata[j]
@@ -209,7 +206,7 @@ class DitherSequence:
         Parameters
         ----------
         filename : str
-            Output filename.
+            Output filename. If none, use default output class member.
         overwrite : bool
             If true, clobber an existing file with the same name.
         """
@@ -264,5 +261,4 @@ class DitherSequence:
             output.append(filenames)
 
         return '\n'.join(output)
-
 
