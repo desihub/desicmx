@@ -1,5 +1,6 @@
 from configparser import ConfigParser
 from glob import glob
+import os
 
 from astropy.table import Table
 from astropy.io import fits
@@ -29,7 +30,8 @@ class DitherSequence:
         self._location = sequence['location']
         self._filetype = sequence['filetype']
         self._date = sequence['date']
-        self._exposures = sorted([int(e) for e in sequence['exposures'].split()])
+        self._exposures = [int(e) for e in sequence['exposures'].split()]
+        self._dithertype = sequence['dithertype']
 
         if 'coordinates' in sequence:
             coords = sequence['coordinates']
@@ -38,15 +40,21 @@ class DitherSequence:
         elif 'wcsfile' in sequence:
             self._wcs = fits.getdata(sequence['wcsfile'], 2)
             self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
-            self._dither = ascii.read(sequence['ditherfile'])
             self._central_exposure = int(sequence['centralexposure'])
+        else:
+            raise ValueError('must set either coordinates or wcsfile '
+                             'and ditherfile in config')
+        if sequence['dithertype'] == 'telescope':
+            fadir = sequence['fiberassigndir']
+            self._ditherfa = fits.getdata(os.path.join(
+                fadir, 'fiberassign-%s.fits' % sequence['ditheredtilenum']))
+            self._unditherfa = fits.getdata(os.path.join(
+                fadir, 'fiberassign-%s.fits' % sequence['unditheredtilenum']))
             expnum = [int(fn.split('-')[1]) for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
             self._central_wcs = self._wcs[centralind]
         else:
-            raise ValueError('must set either coordinates or wcsfile '
-                             'and ditherfile in config')
-
+            raise ValueError('not implemented')
         # Extract the list of exposures on disk.
         self._exposure_files = self._getfilenames()
 
@@ -126,6 +134,10 @@ class DitherSequence:
                 fluxdata = hdu['FLUX'].data
                 ivardata = hdu['IVAR'].data
                 fibermap = hdu['FIBERMAP'].data
+                if not np.all(self._unditherfa['FIBER'] ==
+                              np.arange(len(self._unditherfa))):
+                    raise ValueError('weird fiberassign file format!')
+                fibermap = self._unditherfa[fibermap['FIBER']]
 
                 target_id = fibermap['TARGETID']
                 target_ra = fibermap['TARGET_RA']
@@ -140,27 +152,33 @@ class DitherSequence:
                 if getattr(self, '_deltara', None) is not None:
                     dra  = self._deltara[i]*np.ones(len(fiber))
                     ddec = self._deltadec[i]*np.ones(len(fiber))
-                else:
-                    dfiberra = (
-                        self._dither['DELTA_RA(ORIGINAL-DITHERED) [degrees]'])
-                    dfiberdec = (
-                        self._dither['DELTA_DEC(ORIGINAL-DITHERED) [degrees]'])
-                    if not np.all(self._dither['FIBER'] ==
-                                  np.arange(len(self._dither))):
+                elif self._dithertype == 'telescope':
+                    dithra = self._ditherfa['target_ra']
+                    dithdec = self._ditherfa['target_dec']
+                    udithra = self._unditherfa['target_ra']
+                    udithdec = self._unditherfa['target_dec']
+                    dfiberra = (dithra-udithra)*np.cos(np.radians(udithdec))*60*60
+                    dfiberdec = (dithdec-udithdec)*60*60
+                    if not np.all(self._ditherfa['FIBER'] ==
+                                  np.arange(len(self._ditherfa))):
                         raise ValueError('unexpected shape of dither file')
                     dfiberra = dfiberra[fiber]
                     dfiberdec = dfiberdec[fiber]
-                                  
-                                  
-                    dfiberra = dfiberra*60*60
-                    dfiberdec = dfiberdec*60*60
                     wcs = self.lookup_wcs(fluxhead['MJD-OBS'])
                     centralwcs = self._central_wcs
+                    if (~np.isfinite(centralwcs['cenra'][1]) or
+                        ~np.isfinite(centralwcs['cendec'][1])):
+                        raise ValueError('central pointing ra/dec is NaN!')
                     dtelra = (wcs['cenra'][1]-centralwcs['cenra'][1])
-                    dtelra *= np.cos(np.radians(centralwcs['cendec'][2]))
+                    dtelra *= np.cos(np.radians(centralwcs['cendec'][1]))
                     dteldec = wcs['cendec'][1]-centralwcs['cendec'][1]
-                    dra = dfiberra + dtelra
-                    ddec = dfiberdec + dteldec
+                    dra = dfiberra + dtelra*60*60
+                    ddec = dfiberdec + dteldec*60*60
+                    if np.any(~np.isfinite(dra)):
+                        pdb.set_trace()
+                else:
+                    raise ValueError('not implemented')
+                    
 
                 for j, fiber_id in enumerate(fiber):
                     flux = fluxdata[j]
