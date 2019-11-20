@@ -13,18 +13,25 @@ class DitherSequence:
     """Access class to dithering sequence data from nightwatch or redux
     files."""
 
-    def __init__(self, inifile):
+    def __init__(self, inifile, dry_run, output):
         """Parse a configuration file in INI format.
 
         Parameters
         ----------
         inifile : str
             Name of INI file with configuration data.
+        dry_run : bool
+            If true, do not process input files.
+        output : str
+            Name of output file (FITS format).
         """
 
         config = ConfigParser()
         config.read(inifile)
         sequence = config['dithersequence']
+
+        # Set up the output.
+        self._output = output
 
         # Set up the file type and exposure sequence.
         self._location = sequence['location']
@@ -33,12 +40,14 @@ class DitherSequence:
         self._exposures = [int(e) for e in sequence['exposures'].split()]
         self._dithertype = sequence['dithertype']
 
-        if 'coordinates' in sequence:
-            coords = sequence['coordinates']
-            self._deltara = [float(d) for d in coords['deltara'].split()]
-            self._deltadec = [float(d) for d in coords['deltadec'].split()]
-        elif 'wcsfile' in sequence:
-            self._wcs = fits.getdata(sequence['wcsfile'], 2)
+        if 'coordinates' in config:
+            coords = config['coordinates']
+
+            # Positioner offset file from Sarah E.
+            self._dither = ascii.read(coords['ditherfile'])
+
+            # Define coordinate system.
+            self._wcs = fits.getdata(coords['wcsfile'], 2)
             self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
             self._central_exposure = int(sequence['centralexposure'])
         else:
@@ -53,13 +62,18 @@ class DitherSequence:
             expnum = [int(fn.split('-')[1]) for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
             self._central_wcs = self._wcs[centralind]
+
+            # Set the Tile ID for the output metadata.
+            self._tileid = int(coords['tile'])
         else:
             raise ValueError('not implemented')
+
         # Extract the list of exposures on disk.
         self._exposure_files = self._getfilenames()
 
-        # Construct fiber output.
-        self._exposure_table = self._buildtable()
+        if not dry_run:
+            # Construct fiber output.
+            self._exposure_table = self._buildtable()
 
     def _getfilenames(self):
         """Return a list of exposures and filenames given an INI configuration.
@@ -179,7 +193,6 @@ class DitherSequence:
                 else:
                     raise ValueError('not implemented')
                     
-
                 for j, fiber_id in enumerate(fiber):
                     flux = fluxdata[j]
                     ivar = ivardata[j]
@@ -204,7 +217,8 @@ class DitherSequence:
                            'SPECTROFLUX', 'SPECTROFLUX_IVAR', 'CAMERA',
                            'DELTA_X_ARCSEC', 'DELTA_Y_ARCSEC',
                            'XFOCAL', 'YFOCAL'),
-                    meta={'EXTNAME' : 'DITHER'})
+                    meta={'EXTNAME' : 'DITHER',
+                          'TILEID' : '{}'.format(self._tileid)})
 
         return tab
 
@@ -217,14 +231,18 @@ class DitherSequence:
             raise ValueError('Something confusing with wcs list')
         return twcs
 
-    def save(self, filename, overwrite=True):
+    def save(self, filename=None, overwrite=True):
         """Save exposure table to a FITS file.
 
         Parameters
         ----------
         filename : str
-            Output filename.
+            Output filename. If none, use default output class member.
+        overwrite : bool
+            If true, clobber an existing file with the same name.
         """
+        if filename is None:
+            filename = self._output
         self._exposure_table.write(filename, overwrite=overwrite)
 
     def rearrange_table(self):
@@ -266,7 +284,7 @@ class DitherSequence:
     def __str__(self):
         """String representation of the exposure sequence.
         """
-        output = []
+        output = ['Tile ID {}'.format(self._tileid)]
         for ex, files in self._exposure_files.items():
             filenames = '- exposure {:08d}\n'.format(ex)
             for f in files:
@@ -274,5 +292,4 @@ class DitherSequence:
             output.append(filenames)
 
         return '\n'.join(output)
-
 
