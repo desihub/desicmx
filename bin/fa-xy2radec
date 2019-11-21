@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+
+#- Derive RA,dec of fibers from NGC 205 field given that they were configured
+#- for a different field
+
+import fitsio
+import numpy as np
+import desimodel.focalplane
+
+import argparse
+
+parser = argparse.ArgumentParser(usage = "{prog} [options]")
+parser.add_argument("-i", "--input", type=str,  help="input fiberassign file")
+parser.add_argument("-o", "--output", type=str,  help="output fits file")
+parser.add_argument("--skyra", type=float,  help="telescope RA [deg]")
+parser.add_argument("--skydec", type=float,  help="telescope DEC [deg]")
+args = parser.parse_args()
+
+#- Read a subset of the fiberassign columns for how the positioners were configured
+columns = ['TARGETID', 'PETAL_LOC', 'DEVICE_LOC', 'FIBER',
+           'TARGET_RA', 'TARGET_DEC', 'FIBERASSIGN_X', 'FIBERASSIGN_Y']
+fa, hdr = fitsio.read(args.input, 'FIBERASSIGN', columns=columns, header=True)
+
+#- Remove some keywords that don't apply to this non-tile pointing
+tileid = hdr['TILEID']
+hdr.delete('TILEID')
+hdr.delete('TILERA')
+hdr.delete('TILEDEC')
+
+#- Derive new RA, DEC based upon the X,Y and telescope pointing
+#- in a 3x3 grid of 5" offsets
+
+x = fa['FIBERASSIGN_X']
+y = fa['FIBERASSIGN_Y']
+ra, dec = desimodel.focalplane.xy2radec(args.skyra, args.skydec, x, y)
+fa['TARGET_RA'] = ra
+fa['TARGET_DEC'] = dec
+
+#- Update header
+hdr.delete('REQRA')
+hdr.delete('REQDEC')
+hdr['REQRA'] = args.skyra
+hdr['REQDEC'] = args.skydec
+hdr.add_record('COMMENT', 'tile {} x,y to diff tele ra,dec'.format(tileid))
+
+fitsio.write(args.output, fa, header=hdr, clobber=True)
+
+
