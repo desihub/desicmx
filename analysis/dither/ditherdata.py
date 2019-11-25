@@ -38,33 +38,29 @@ class DitherSequence:
         self._filetype = sequence['filetype']
         self._date = sequence['date']
         self._exposures = [int(e) for e in sequence['exposures'].split()]
-        self._dithertype = sequence['dithertype']
 
-        if 'coordinates' in config:
-            coords = config['coordinates']
+        if 'coordinates' not in config:
+            raise ValueError('no coordinates set for dither!')
+        
+        coords = config['coordinates']
+        self._dithertype = coords['dithertype']
+        
+        self._wcs = fits.getdata(coords['wcsfile'], 2)
+        self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
+        self._central_exposure = int(sequence['centralexposure'])
 
-            # Positioner offset file from Sarah E.
-            self._dither = ascii.read(coords['ditherfile'])
-
-            # Define coordinate system.
-            self._wcs = fits.getdata(coords['wcsfile'], 2)
-            self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
-            self._central_exposure = int(sequence['centralexposure'])
-        else:
-            raise ValueError('must set either coordinates or wcsfile '
-                             'and ditherfile in config')
-        if sequence['dithertype'] == 'telescope':
-            fadir = sequence['fiberassigndir']
+        if coords['dithertype'] == 'telescope':
+            fadir = coords['fiberassigndir']
             self._ditherfa = fits.getdata(os.path.join(
-                fadir, 'fiberassign-%s.fits' % sequence['ditheredtilenum']))
+                fadir, 'fiberassign-%s.fits' % coords['ditheredtilenum']))
             self._unditherfa = fits.getdata(os.path.join(
-                fadir, 'fiberassign-%s.fits' % sequence['unditheredtilenum']))
+                fadir, 'fiberassign-%s.fits' % coords['unditheredtilenum']))
             expnum = [int(fn.split('-')[1]) for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
             self._central_wcs = self._wcs[centralind]
 
             # Set the Tile ID for the output metadata.
-            self._tileid = int(coords['tile'])
+            self._tileid = int(coords['unditheredtilenum'])
         else:
             raise ValueError('not implemented')
 
@@ -189,7 +185,8 @@ class DitherSequence:
                     dra = dfiberra + dtelra*60*60
                     ddec = dfiberdec + dteldec*60*60
                     if np.any(~np.isfinite(dra)):
-                        pdb.set_trace()
+                        print('warning: no good telescope offset for %s' %
+                              exfile)
                 else:
                     raise ValueError('not implemented')
                     
