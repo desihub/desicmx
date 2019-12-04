@@ -30,6 +30,9 @@ parser.add_argument('-r', '--deltara', default=0, type=float,
                     help='Ra offset of center of raster from current position')
 parser.add_argument('-d', '--deltadec', default=0, type=float,
                     help='Dec offset of center of raster from current position')
+parser.add_argument('-s', '--split', dest='split', action='store_true',
+                    default=False,
+                    help='Split JSON scripts for two ICS instances')
 
 args = parser.parse_args()
 
@@ -44,17 +47,16 @@ tile_id = args.tile_id
 stepx = np.asarray([ 0,  1, -1, -1,  0,  1,  1,  0, -1, -1,  1])*step
 stepy = np.asarray([ 0,  1,  0,  0, -1,  0,  0, -1,  0,  0,  1])*step
 
-gfa_filename = 'gfaseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}.json'.format(tile_id, step.value, args.deltara, args.deltadec)
-spec_filename = 'specseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}.json'.format(tile_id, step.value, args.deltara, args.deltadec)
-
-gfa_script = []
-spec_script = []
+gfa_script = []     # Independent GFA JSON script.
+spec_script = []    # Independent spectrograph JSON script.
+dith_script = []    # Single interleaved GFA+spectrograph script.
 
 gfa_script.append({'sequence': 'Action',
                    'action'  : 'slew',
                    'deltara' : RA.value,
                    'deltadec': DEC.value
                   })
+dith_script.append(gfa_script[-1])
 
 for j, (dx, dy) in enumerate(zip(stepx, stepy)):
     ra = ra + dx
@@ -68,6 +70,7 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                            'deltara' : dx.value,
                            'deltadec': dy.value
                           })
+        dith_script.append(gfa_script[-1])
 
     gfa_script.append({'sequence': 'GFA',
                        'flavor'  : 'science',
@@ -79,6 +82,8 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                                                                                   (dec).to('arcsec').value
                                                                                 )
                       })
+    dith_script.append(gfa_script[-1])
+    dith_script.append({'sequence' : 'Break'})
 
     # Spectrograph sequence:
     spec_script.append({'sequence' : 'Spectrographs',
@@ -90,6 +95,9 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                                                                                     (dec).to('arcsec').value),
                         'obstype'  : "SCIENCE"
                        })
+    dith_script.append(spec_script[-1])
+    dith_script.append({'sequence' : 'Break'})
+
     if j+1 < len(stepx):
         spec_script.append({'sequence' : 'Break'})
 
@@ -98,9 +106,21 @@ gfa_script.append({'sequence': 'Action',
                    'deltara' : -RA.value,
                    'deltadec': -DEC.value
                   })
+dith_script.append(gfa_script[-1])
 
-json.dump(gfa_script, open(gfa_filename, 'w'), indent=4)
-json.dump(spec_script, open(spec_filename, 'w'), indent=4)
 
-print('Use {} in the DESI observer console.'.format(gfa_filename))
-print('Use {} in the spectrograph ICS console.'.format(spec_filename))
+if args.split:
+    # Split JSON GFA+spectrograph scripts into two files.
+    gfa_filename = 'gfaseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}.json'.format(tile_id, step.value, args.deltara, args.deltadec)
+    spec_filename = 'specseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}.json'.format(tile_id, step.value, args.deltara, args.deltadec)
+
+    json.dump(gfa_script, open(gfa_filename, 'w'), indent=4)
+    json.dump(spec_script, open(spec_filename, 'w'), indent=4)
+
+    print('Use {} in the DESI observer console.'.format(gfa_filename))
+    print('Use {} in the spectrograph ICS console.'.format(spec_filename))
+else:
+    # Dump JSON GFA+spectrograph script into one file.
+    dith_filename = 'dithseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}.json'.format(tile_id, step.value, args.deltara, args.deltadec)
+    json.dump(dith_script, open(dith_filename, 'w'), indent=4)
+    print('Use {} in the DESI observer console.'.format(dith_filename))
