@@ -74,8 +74,8 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
 
     gfa_script.append({'sequence': 'GFA',
                        'flavor'  : 'science',
-                       'exptime' : 30.0,
-                       'count'   : 2,
+                       'exptime' : 60.0,
+                       'count'   : 1,
                        'correct_for_adc' : False,
                        'program' : "Dither tile_id {:05d} ({:g},{:g})".format( tile_id, 
                                                                                   (ra).to('arcsec').value,
