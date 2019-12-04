@@ -92,7 +92,7 @@ def grokdither(seqlist, obsday, petalnum, channel, fiberassigncsvfilename, night
             x_ax.tick_params()
             y_ax= plt.twinx()
             y_ax.minorticks_on() 
-            x_ax.set_xlim()
+            x_ax.set_xlim(xlim)
             y_ax.set_ylim(ylim)
             y_ax.tick_params(which='major', length=8, width=1.0, direction='in')
             y_ax.tick_params(which='minor', length=6, color='#000033', width=1.0, direction='in')
