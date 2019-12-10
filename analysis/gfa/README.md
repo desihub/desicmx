@@ -10,3 +10,7 @@ This directory contains the following notebooks for GFA calibration analysis:
 These notebooks should be run in the order above to reproduce the existing calibrations or to incorporate new data.
  
 All results are saved in a single FITS file. For details, see DESI-5315.  Notebooks use code from https://github.com/dkirkby/desietcimg.
+
+## ETC Pipeline
+
+The `GFA-ETC-Pipeline.ipynb` notebook has examples of using the ETC online pipeline to apply these calibrations.
