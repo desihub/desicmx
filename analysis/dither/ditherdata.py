@@ -38,33 +38,29 @@ class DitherSequence:
         self._filetype = sequence['filetype']
         self._date = sequence['date']
         self._exposures = [int(e) for e in sequence['exposures'].split()]
-        self._dithertype = sequence['dithertype']
 
-        if 'coordinates' in config:
-            coords = config['coordinates']
+        if 'coordinates' not in config:
+            raise ValueError('no coordinates set for dither!')
+        
+        coords = config['coordinates']
+        self._dithertype = coords['dithertype']
+        
+        self._wcs = fits.getdata(coords['wcsfile'], 2)
+        self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
+        self._central_exposure = int(sequence['centralexposure'])
 
-            # Positioner offset file from Sarah E.
-            self._dither = ascii.read(coords['ditherfile'])
-
-            # Define coordinate system.
-            self._wcs = fits.getdata(coords['wcsfile'], 2)
-            self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
-            self._central_exposure = int(sequence['centralexposure'])
-        else:
-            raise ValueError('must set either coordinates or wcsfile '
-                             'and ditherfile in config')
-        if sequence['dithertype'] == 'telescope':
-            fadir = sequence['fiberassigndir']
+        if coords['dithertype'] == 'telescope':
+            fadir = coords['fiberassigndir']
             self._ditherfa = fits.getdata(os.path.join(
-                fadir, 'fiberassign-%s.fits' % sequence['ditheredtilenum']))
+                fadir, 'fiberassign-%s.fits' % coords['ditheredtilenum']))
             self._unditherfa = fits.getdata(os.path.join(
-                fadir, 'fiberassign-%s.fits' % sequence['unditheredtilenum']))
+                fadir, 'fiberassign-%s.fits' % coords['unditheredtilenum']))
             expnum = [int(fn.split('-')[1]) for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
             self._central_wcs = self._wcs[centralind]
 
             # Set the Tile ID for the output metadata.
-            self._tileid = int(coords['tile'])
+            self._tileid = coords['unditheredtilenum']
         else:
             raise ValueError('not implemented')
 
@@ -148,6 +144,7 @@ class DitherSequence:
                 fluxdata = hdu['FLUX'].data
                 ivardata = hdu['IVAR'].data
                 fibermap = hdu['FIBERMAP'].data
+                exptime = fluxhead['EXPTIME']
                 if not np.all(self._unditherfa['FIBER'] ==
                               np.arange(len(self._unditherfa))):
                     raise ValueError('weird fiberassign file format!')
@@ -158,7 +155,9 @@ class DitherSequence:
                 target_dec = fibermap['TARGET_DEC']
                 fiber = fibermap['FIBER']
                 objtype = fibermap['OBJTYPE']
+                flux_g = fibermap['FLUX_G']
                 flux_r = fibermap['FLUX_R']
+                flux_z = fibermap['FLUX_Z']
                 x, y = [fibermap['FIBERASSIGN_{}'.format(val)] for val in ('X', 'Y')]
 
                 camera = fluxhead['CAMERA'][0].upper()
@@ -171,11 +170,16 @@ class DitherSequence:
                     dithdec = self._ditherfa['target_dec']
                     udithra = self._unditherfa['target_ra']
                     udithdec = self._unditherfa['target_dec']
+                    ontarget = ((self._ditherfa['targetid'] ==
+                                 self._unditherfa['targetid']) &
+                                (self._ditherfa['objtype'] == 'TGT'))
                     dfiberra = (dithra-udithra)*np.cos(np.radians(udithdec))*60*60
                     dfiberdec = (dithdec-udithdec)*60*60
                     if not np.all(self._ditherfa['FIBER'] ==
                                   np.arange(len(self._ditherfa))):
                         raise ValueError('unexpected shape of dither file')
+                    dfiberra[~ontarget] = np.nan
+                    dfiberdec[~ontarget] = np.nan
                     dfiberra = dfiberra[fiber]
                     dfiberdec = dfiberdec[fiber]
                     wcs = self.lookup_wcs(fluxhead['MJD-OBS'])
@@ -188,8 +192,9 @@ class DitherSequence:
                     dteldec = wcs['cendec'][1]-centralwcs['cendec'][1]
                     dra = dfiberra + dtelra*60*60
                     ddec = dfiberdec + dteldec*60*60
-                    if np.any(~np.isfinite(dra)):
-                        pdb.set_trace()
+                    if np.all(~np.isfinite(dra)):
+                        print('warning: no good telescope offset for %s' %
+                              exfile)
                 else:
                     raise ValueError('not implemented')
                     
@@ -204,16 +209,24 @@ class DitherSequence:
                         mask = ivar > meanivar / 100
                         specflux = np.trapz(flux*mask, wave)
                         specflux_ivar = 1./np.sum(ivar[mask]**-1)
-                    tabrows.append((expid,
+                        # Schlegel: sum over correct wavelengths, all three
+                        # filters, plus 11 pixel median filter to reject
+                        # cosmics.
+                        # will require being better about reading in
+                        # the spectrographs together.
+                    tabrows.append((expid, exptime,
                                     target_id[j], target_ra[j], target_dec[j],
-                                    fiber[j], objtype[j], flux_r[j],
+                                    fiber[j], objtype[j],
+                                    flux_g[j], flux_r[j], flux_z[j],
                                     specflux, specflux_ivar, camera,
                                     dra[j], ddec[j],
                                     x[j], y[j]))
 
         tab = Table(rows=tabrows,
-                    names=('EXPID', 'TARGETID', 'TARGET_RA', 'TARGET_DEC',
-                           'FIBER', 'OBJTYPE', 'FLUX_R',
+                    names=('EXPID', 'EXPTIME',
+                           'TARGETID', 'TARGET_RA', 'TARGET_DEC',
+                           'FIBER', 'OBJTYPE',
+                           'FLUX_G', 'FLUX_R', 'FLUX_Z',
                            'SPECTROFLUX', 'SPECTROFLUX_IVAR', 'CAMERA',
                            'DELTA_X_ARCSEC', 'DELTA_Y_ARCSEC',
                            'XFOCAL', 'YFOCAL'),
@@ -226,6 +239,9 @@ class DitherSequence:
         # expfn = self._exposure_files[expnum]
         # mjd = fits.getheader(expfn)['MJD-OBS']
         ind = np.searchsorted(self._wcs['mjd_obs'], mjd)
+        if ind >= len(self._wcs):
+            return np.array(((np.nan,)*3, (np.nan,)*3),
+                            dtype=[('cenra', '3f8'), ('cendec', '3f8')])
         twcs = self._wcs[ind]
         if twcs['mjd_obs'] <= mjd:
             raise ValueError('Something confusing with wcs list')
@@ -248,36 +264,32 @@ class DitherSequence:
     def rearrange_table(self):
         exps = np.sort(np.unique(self._exposure_table['EXPID']))
         nexp = len(exps)
-        camera = np.unique(self._exposure_table['CAMERA'])
         nfiber = 5000
-        nfibf8 = '%df8' % nfiber
-        nfibf4 = '%df4' % nfiber
-        nfibi4 = '%di4' % nfiber
-        nfibi8 = '%di8' % nfiber
+        camera = np.unique(self._exposure_table['CAMERA'])
         out = {}
-        newtab = np.zeros(nexp, dtype=[
-            ('expid', 'i4'), ('targetid', nfibi8), ('camera', 'U1'),
-            ('target_ra', nfibf8), ('target_dec', nfibf8),
-            ('fiber', nfibi4), ('objtype', '%dU3' % nfiber),
-            ('flux_r', nfibf4), ('spectroflux', nfibf4),
-            ('spectroflux_ivar', nfibf4),
-            ('delta_x_arcsec', nfibf4), ('delta_y_arcsec', nfibf4),
-            ('xfocal', nfibf4), ('yfocal', nfibf4)])
+        newtab = np.zeros((nfiber, nexp), dtype=[
+            ('expid', 'i4'), ('exptime', 'f4'),
+            ('targetid', 'i8'), ('camera', 'U1'),
+            ('target_ra', 'f8'), ('target_dec', 'f8'),
+            ('fiber', 'i4'), ('objtype', 'U3'),
+            ('flux_g', 'f4'), ('flux_r', 'f4'), ('flux_z', 'f4'),
+            ('spectroflux', 'f4'),
+            ('spectroflux_ivar', 'f4'),
+            ('delta_x_arcsec', 'f4'), ('delta_y_arcsec', 'f4'),
+            ('xfocal', 'f4'), ('yfocal', 'f4')])
+        newtab['fiber'][:] = -999
         for camera0 in camera:
             mc = self._exposure_table['CAMERA'] == camera0
             newtab0 = newtab.copy()
             newtab0['camera'] = camera0
             for i, exp0 in enumerate(exps):
                 me = self._exposure_table['EXPID'] == exp0
-                newtab['expid'][i] = exp0
                 dat = self._exposure_table[me & mc]
                 if np.any(dat['FIBER'] >= 5000) or np.any(dat['FIBER'] < 0):
                     raise ValueError('unexpected number of fibers')
                 ind = dat['FIBER']
                 for field in dat.dtype.names:
-                    if field in ['EXPID', 'CAMERA']:
-                        continue
-                    newtab0[field.lower()][i, ind] = dat[field]
+                    newtab0[field.lower()][ind, i] = dat[field]
             out[camera0] = newtab0
         return out
 
