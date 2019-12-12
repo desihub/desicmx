@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 """
-Show which fibers are successfully on targets
+Show which fibers are successfully on targets based upon at least two
+cameras with SNR>1.0
 
 Stephen Bailey
 December 2019
@@ -10,14 +11,16 @@ December 2019
 import sys, os, glob
 import argparse
 import numpy as np
-from astropy.table import Table
-import desimodel.io
+import fitsio
 
 #- Parse args to get input file, night, expid
 parser = argparse.ArgumentParser(usage = "{prog} [options]")
 parser.add_argument("-i", "--input", type=str,  help="Nightwatch QA file")
 parser.add_argument("-n", "--night", type=int,  help="night YEARMMDD")
 parser.add_argument("-e", "--expid", type=int,  help="exposure ID")
+parser.add_argument("--snr", type=float, default=1.0, help="S/N requirement (default 1.0)")
+parser.add_argument("--noplot", action="store_true", help="do not make plot")
+parser.add_argument("--notable", action="store_true", help="do not print table of fibers")
 
 args = parser.parse_args()
 
@@ -64,29 +67,34 @@ else:
             break
     else:
         raise RuntimeError('No QA files found')
-    
-qadata = Table.read(qafile, 'PER_CAMFIBER')
+
+print('Reading {}'.format(qafile))
+qadata = fitsio.read(qafile, 'PER_CAMFIBER')
 night = qadata['NIGHT'][0]
 expid = qadata['EXPID'][0]
-print('Found latest Nightwatch QA for night {} expid {}'.format(night, expid))
+print('Night {} expid {}'.format(night, expid))
 
-if 'MEDIAN_CALIB_SNR' not in qadata.colnames:
+if 'MEDIAN_CALIB_SNR' not in qadata.dtype.names:
     print('ERROR: night {} expid {} was not a sky exp with MEDIAN_CALIB_SNR'.format(night, expid))
     print('Try using --night NIGHT --expid EXPID options')
     sys.exit(1)
 
-highsnr = qadata['MEDIAN_CALIB_SNR'] > 1.0
-bcam = (qadata['CAM'] == 'B')
-zcam = (qadata['CAM'] == 'Z')
+highsnr = qadata['MEDIAN_CALIB_SNR'] > args.snr
+bcam = (qadata['CAM'] == 'B') | (qadata['CAM'] == b'B')
+zcam = (qadata['CAM'] == 'Z') | (qadata['CAM'] == b'Z')
 
 fibers = set(qadata['FIBER'][highsnr & bcam]) & set(qadata['FIBER'][highsnr & zcam])
 fibers = np.array(sorted(fibers))
 ntargets = len(fibers)
 
-fp = desimodel.io.load_focalplane()[0]
-fp = fp[fp['DEVICE_TYPE'] == 'POS']
-x = fp['OFFSET_X']
-y = fp['OFFSET_Y']
+#- Read focal plane model, but don't use desimodel code to make it easier
+#- to support desiobserver user at KPNO
+if 'DESIMODEL' not in os.environ:
+    os.environ['DESIMODEL'] = '/software/datasystems/desiconda/20191002/desimodel/master'
+
+fp = fitsio.read(os.getenv('DESIMODEL')+'/data/focalplane/fiberpos.fits')
+x = fp['X']
+y = fp['Y']
 
 ii = np.in1d(fp['FIBER'], fibers)
 devloc = fp['LOCATION'][ii]
@@ -100,43 +108,42 @@ for p in range(10):
     jj = (p*1000 <= devloc) & (devloc < (p+1)*1000)
     petaldevloc[p] = devloc[jj] % 1000
 
-def print_fibers(petalfibers):
-    '''
-    Args:
-        petalfibers : dict[petal] = list(fibers or devices)
-    '''
-    nmax = max([len(pf) for pf in petalfibers.values()])
+print('{} fibers / locations on targets'.format(ntargets))
+
+if not args.notable:
     for p in range(10):
-        print('   P{} '.format(p), end='')
+        print('{:>9s}'.format('P'+str(p)), end='')
     print()
 
+    nmax = max([len(pf) for pf in petalfibers.values()])
     for i in range(nmax):
         for p in range(10):
             if i < len(petalfibers[p]):
-                print('{:6d}'.format(petalfibers[p][i]), end='')
+                fiberloc = '{}/{}'.format(petalfibers[p][i], petaldevloc[p][i])
+                print('{:>9s}'.format(fiberloc), end='')
             else:
-                print('      ', end='')
+                print('         ', end='')
         print()
-
-print('{} fibers on targets:'.format(ntargets))
-print_fibers(petalfibers)
-
-print('{} device locations on targets:'.format(ntargets))
-print_fibers(petaldevloc)
-
 
 hasdata = np.in1d(fp['FIBER'], qadata['FIBER'])
 hastarget = np.in1d(fp['FIBER'], fibers)
 
-# #--- DEBUG ---
-# import IPython
-# IPython.embed()
-# #--- DEBUG ---
+if not args.noplot:
+    from pylab import *
+    figure(figsize=(5,5), frameon=False)
+    plot(x[hasdata], y[hasdata], 'k.', ms=1, alpha=0.5)
+    plot(x[~hasdata], y[~hasdata], 'k.', ms=1, alpha=0.2)
+    plot(x[hastarget], y[hastarget], 'o', color='C2', ms=4, alpha=0.8)
+    title('Night {} expid {}'.format(night, expid))
 
-from pylab import *
-figure(figsize=(5,5))
-plot(x[hasdata], y[hasdata], 'k.', ms=1, alpha=0.5)
-plot(x[~hasdata], y[~hasdata], 'k.', ms=1, alpha=0.2)
-plot(x[hastarget], y[hastarget], 'o', color='C2', ms=4, alpha=0.8)
-title('Night {} expid {}'.format(night, expid))
-show()
+    rtext = 440
+    for p in range(10):
+        theta = p*36 - 90
+        xtext = rtext * np.cos(np.radians(theta))
+        ytext = rtext * np.sin(np.radians(theta))
+        text(xtext, ytext, str(len(petalfibers[p])), color='gray',
+            horizontalalignment='center', verticalalignment='center')
+
+    xlim(-470, 470)
+    ylim(-470, 470)
+    show()
