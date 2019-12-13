@@ -1,0 +1,149 @@
+#!/usr/bin/env python
+
+"""
+Show which fibers are successfully on targets based upon at least two
+cameras with SNR>1.0
+
+Stephen Bailey
+December 2019
+"""
+
+import sys, os, glob
+import argparse
+import numpy as np
+import fitsio
+
+#- Parse args to get input file, night, expid
+parser = argparse.ArgumentParser(usage = "{prog} [options]")
+parser.add_argument("-i", "--input", type=str,  help="Nightwatch QA file")
+parser.add_argument("-n", "--night", type=int,  help="night YEARMMDD")
+parser.add_argument("-e", "--expid", type=int,  help="exposure ID")
+parser.add_argument("--snr", type=float, default=1.0, help="S/N requirement (default 1.0)")
+parser.add_argument("--noplot", action="store_true", help="do not make plot")
+parser.add_argument("--notable", action="store_true", help="do not print table of fibers")
+
+args = parser.parse_args()
+
+def find_latest_qafile(basedir):
+    nights = glob.glob(basedir+'/20??????')
+    if len(nights) == 0:
+        raise RuntimeError('No nights found in {}'.format(basedir))
+    night = os.path.basename(sorted(nights)[-1])
+    qafiles = glob.glob('{}/{}/????????/qa-????????.fits'.format(basedir, night))
+    if len(qafiles) == 0:
+        raise RuntimeError('No qa files found in {}/{}/*/qa-*.fits'.format(basedir, night))
+    qafile = sorted(qafiles)[-1]
+    return qafile
+
+if args.input:
+    qafile = args.input
+elif (args.night is not None) and (args.expid is not None):
+    night = args.night
+    expid = args.expid
+    
+    kpnofile = '/exposures/nightwatch/{night}/{expid:08d}/qa-{expid:08d}.fits'
+    nerscfile = '/project/projectdirs/desi/spectro/nightwatch/kpno/{night}/{expid:08d}/qa-{expid:08d}.fits'
+    sjbfile = '/data/desi/nightwatch/{night}/{expid:08d}/qa-{expid:08d}.fits'
+    
+    for qafile in [
+        kpnofile.format(night=night, expid=expid),
+        nerscfile.format(night=night, expid=expid),
+        sjbfile.format(night=night, expid=expid)
+        ]:
+        if os.path.exists(qafile):            
+            break
+    else:
+        raise RuntimeError('QA file for night {} expid {} not found'.format(night, expid))
+
+else:
+    #- look for latest exposure
+    for basedir in [
+        '/exposures/nightwatch',
+        '/project/projectdirs/desi/spectro/nightwatch/kpno',
+        '/data/desi/nightwatch'
+        ]:
+        if os.path.isdir(basedir):
+            qafile = find_latest_qafile(basedir)
+            break
+    else:
+        raise RuntimeError('No QA files found')
+
+print('Reading {}'.format(qafile))
+qadata = fitsio.read(qafile, 'PER_CAMFIBER')
+night = qadata['NIGHT'][0]
+expid = qadata['EXPID'][0]
+print('Night {} expid {}'.format(night, expid))
+
+if 'MEDIAN_CALIB_SNR' not in qadata.dtype.names:
+    print('ERROR: night {} expid {} was not a sky exp with MEDIAN_CALIB_SNR'.format(night, expid))
+    print('Try using --night NIGHT --expid EXPID options')
+    sys.exit(1)
+
+highsnr = qadata['MEDIAN_CALIB_SNR'] > args.snr
+bcam = (qadata['CAM'] == 'B') | (qadata['CAM'] == b'B')
+zcam = (qadata['CAM'] == 'Z') | (qadata['CAM'] == b'Z')
+
+fibers = set(qadata['FIBER'][highsnr & bcam]) & set(qadata['FIBER'][highsnr & zcam])
+fibers = np.array(sorted(fibers))
+ntargets = len(fibers)
+
+#- Read focal plane model, but don't use desimodel code to make it easier
+#- to support desiobserver user at KPNO
+if 'DESIMODEL' not in os.environ:
+    os.environ['DESIMODEL'] = '/software/datasystems/desiconda/20191002/desimodel/master'
+
+fp = fitsio.read(os.getenv('DESIMODEL')+'/data/focalplane/fiberpos.fits')
+x = fp['X']
+y = fp['Y']
+
+ii = np.in1d(fp['FIBER'], fibers)
+devloc = fp['LOCATION'][ii]
+
+#- Sort by petal and print
+petalfibers = dict()
+petaldevloc = dict()
+for p in range(10):
+    ii = (p*500 <= fibers) & (fibers < (p+1)*500)
+    petalfibers[p] = fibers[ii]
+    jj = (p*1000 <= devloc) & (devloc < (p+1)*1000)
+    petaldevloc[p] = devloc[jj] % 1000
+
+print('{} fibers / locations on targets'.format(ntargets))
+
+if not args.notable:
+    for p in range(10):
+        print('{:>9s}'.format('P'+str(p)), end='')
+    print()
+
+    nmax = max([len(pf) for pf in petalfibers.values()])
+    for i in range(nmax):
+        for p in range(10):
+            if i < len(petalfibers[p]):
+                fiberloc = '{}/{}'.format(petalfibers[p][i], petaldevloc[p][i])
+                print('{:>9s}'.format(fiberloc), end='')
+            else:
+                print('         ', end='')
+        print()
+
+hasdata = np.in1d(fp['FIBER'], qadata['FIBER'])
+hastarget = np.in1d(fp['FIBER'], fibers)
+
+if not args.noplot:
+    from pylab import *
+    figure(figsize=(5,5), frameon=False)
+    plot(x[hasdata], y[hasdata], 'k.', ms=1, alpha=0.5)
+    plot(x[~hasdata], y[~hasdata], 'k.', ms=1, alpha=0.2)
+    plot(x[hastarget], y[hastarget], 'o', color='C2', ms=4, alpha=0.8)
+    title('Night {} expid {}'.format(night, expid))
+
+    rtext = 440
+    for p in range(10):
+        theta = p*36 - 90
+        xtext = rtext * np.cos(np.radians(theta))
+        ytext = rtext * np.sin(np.radians(theta))
+        text(xtext, ytext, str(len(petalfibers[p])), color='gray',
+            horizontalalignment='center', verticalalignment='center')
+
+    xlim(-470, 470)
+    ylim(-470, 470)
+    show()
