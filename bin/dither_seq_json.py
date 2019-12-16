@@ -77,11 +77,11 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                         'program'          : 'Dither tile_id {:05d} ({:g} {:g})'.format(tile_id, ra.to('arcsec').value, dec.to('arcsec').value)
                         })
 
-    # Break, then stop guiding at the beginning of the *next* sequence.
+    # Break, then manually stop guiding before starting the next exposure.
     dith_script.append({'sequence'         : 'Break'})
-    dith_script.append({'sequence'         : 'Guide',
-                        'action'           : 'stop_guiding'
-                        })
+#    dith_script.append({'sequence'         : 'Guide',
+#                        'action'           : 'stop_guiding'
+#                        })
 
 # Dump JSON GFA+spectrograph script into one file.
 dith_filename = 'dithseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}.json'.format(tile_id, step.value, args.deltara, args.deltadec)
