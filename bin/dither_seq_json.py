@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Generate GFA and spectrograph ICS sequences for running telescope dither
+"""Generate guider and spectrograph ICS sequences for running telescope dither
 tests. Assumes a 3x3 dither pattern.
 
 The user can specify the step size, the name of the tile_id, and the central
@@ -20,7 +20,7 @@ import json
 import numpy as np
 from astropy import units as u
 
-parser = ArgumentParser(description='Dither GFA+Spectrograph scripter')
+parser = ArgumentParser(description='Dither Guider+Spectrograph scripter')
 
 # Dithering options for file headers.
 parser.add_argument('step', type=float, help='Dither step size [arcsec]')
@@ -44,9 +44,7 @@ tile_id = args.tile_id
 stepx = np.asarray([ 0,  1, -1, -1,  0,  1,  1,  0, -1, -1,  1])*step
 stepy = np.asarray([ 0,  1,  0,  0, -1,  0,  0, -1,  0,  0,  1])*step
 
-gfa_script = []     # Independent GFA JSON script.
-spec_script = []    # Independent spectrograph JSON script.
-dith_script = []    # Single interleaved GFA+spectrograph script.
+dith_script = []    # Single interleaved guider+spectrograph script.
 
 for j, (dx, dy) in enumerate(zip(stepx, stepy)):
     ra = ra + dx
@@ -83,7 +81,7 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
 #                        'action'           : 'stop_guiding'
 #                        })
 
-# Dump JSON GFA+spectrograph script into one file.
+# Dump JSON guider + spectrograph script into one file.
 dith_filename = 'dithseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}.json'.format(tile_id, step.value, args.deltara, args.deltadec)
 json.dump(dith_script, open(dith_filename, 'w'), indent=4)
 print('Use {} in the DESI observer console.'.format(dith_filename))
