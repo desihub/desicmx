@@ -89,7 +89,10 @@ ntargets = len(fibers)
 
 #- Read focal plane model, but don't use desimodel code to make it easier
 #- to support desiobserver user at KPNO
-if 'DESIMODEL' not in os.environ:
+
+#- Override default DESIMODEL for desiobserver
+if os.getenv('USER') == 'desiobserver' and \
+   os.getenv('HOSTNAME').startswith('desi-'):
     os.environ['DESIMODEL'] = '/software/datasystems/desiconda/20191002/desimodel/master'
 
 fp = fitsio.read(os.getenv('DESIMODEL')+'/data/focalplane/fiberpos.fits')
