@@ -95,11 +95,11 @@ def grokdither(seqlist, obsday, petalnum, channel, fiberassigncsvfilename, night
 
 
 
-
-
-
-def plot_dither_seq(exposure_sequence, obsday, petalnum_list, channel, tileid, nightwatchdir,fiberassign_dir,plotout_dir, snr_thresh):
+def plot_dither_seq(exposure_sequence, obsday, petalnum_list, channel, tileid, nightwatchdir,fiberassign_dir, plotout_dir,snr_thresh):
+        
+        
     
+
      '''NOTE: this hack to replace the csv file with fiberassign's raw output 
               and it only works if the originally assigned tile is also supplied.
               For all the dithered tiles that are provided (see ), 
@@ -121,10 +121,17 @@ def plot_dither_seq(exposure_sequence, obsday, petalnum_list, channel, tileid, n
 
                    plot_dither_seq(exposure_sequence, obsday, petalnum_list, channel, tileid, nightwatchdir, fiberassign_dir, plotout_dir, snr_thresh= 0.5)'''
 
-     for expid in exposure_sequence:
+        
+        
+    print('original assignment is: '+fiberassign_dir+"/fiberassign-0{}.fits".format(str(tileid-1)))
+    print('Dithered assignment is: '+fiberassign_dir+"/fiberassign-0{}.fits".format(str(tileid)))
+    print('if these are not the correct files to be used, stop now!')
+                
+   
+    for expid in exposure_sequence:
         
         fig = py.figure(figsize=(10, 25), dpi=100)    
-        fig.subplots_adjust(wspace=0.30,hspace=0.30, top=0.97, bottom=0.07, left=0.08, right=0.98)
+        fig.subplots_adjust(wspace=0.3,hspace=0.3, top=0.97, bottom=0.07, left=0.08, right=0.98)
         gs = gridspec.GridSpec(5,2) 
         ip = 0
         
@@ -132,11 +139,13 @@ def plot_dither_seq(exposure_sequence, obsday, petalnum_list, channel, tileid, n
         for petalnum in petalnum_list:
 
             petal_assign = {}  
-            if (os.path.exists(fiberassign_dir+"/fiberassign-0{}.fits".format(str(tileid)))):
-
+            if ( not os.path.exists(fiberassign_dir+"/fiberassign-0{}.fits".format(str(tileid)))) | (not os.path.exists(fiberassign_dir+"/fiberassign-0{}.fits".format(str(tileid-1)))):
+                
+                raise ValueError('original assignment {} or dithered assignment {} do not exist!'.format(fiberassign_dir+"/fiberassign-0{}.fits".format(str(tileid-1)),fiberassign_dir+"/Fiberassign-0{}.fits".format(str(tileid))))
+            
+            else:
                 dit= fitsio.read(fiberassign_dir+"/fiberassign-0{}.fits".format(str(tileid)),ext=1)
                 orig = fitsio.read(fiberassign_dir+"/fiberassign-0{}.fits".format(str(tileid-1)), ext=1)
-
                 p = (dit['PETAL_LOC'] == petalnum)
 
                 if np.sum(p) != 500:
@@ -208,7 +217,7 @@ def plot_dither_seq(exposure_sequence, obsday, petalnum_list, channel, tileid, n
                     y_ax.set_ylim(ylim)
                     y_ax.tick_params(which='major', length=8, width=1.0, direction='in')
                     y_ax.tick_params(which='minor', length=6, color='#000033', width=1.0, direction='in')
-    
+                    
                     for tick in ax.xaxis.get_major_ticks():
                          tick.label.set_fontsize(16) 
                             
@@ -221,17 +230,23 @@ def plot_dither_seq(exposure_sequence, obsday, petalnum_list, channel, tileid, n
                     for tick in y_ax.yaxis.get_major_ticks():
                          tick.label.set_fontsize(16) 
     
- 
+            
+        
                 else:                  
                     print('None of the fibers in '+'qa-000'+str(expid)+'.fits'+' have landed on a source (snr >0.5) in petal '+str(petalnum))
 
                     continue
-        
-        py.savefig(plotout_dir+output_filename)
-        
+                    
+        pylab.savefig(plotout_dir+output_filename)
+
         plt.show()
-        print('_________________________________________________________________________________')
-        print ('')
+        print('_________________________________________________________________________________')  
+        print('')
+
+
+
+
+
 
 
 
