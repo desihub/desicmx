@@ -1,0 +1,30 @@
+usage: find_exposures.py [-h] [-e [EXPID [EXPID ...]]]
+                         [-s [SEQUENCE [SEQUENCE ...]]]
+                         [-o [OBSDATE [OBSDATE ...]]]
+
+DOS exposure finder
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -e [EXPID [EXPID ...]], --expid [EXPID [EXPID ...]]
+                        Exposure ID(s)
+  -s [SEQUENCE [SEQUENCE ...]], --sequence [SEQUENCE [SEQUENCE ...]]
+                        Sequence type [GFA, FVC, Spectrograph...]
+  -o [OBSDATE [OBSDATE ...]], --obsdate [OBSDATE [OBSDATE ...]]
+                        Observation date(s) [YYYYMMDD]
+
+
+usage: dithering.py [-h] [-p PMX_ID] exprange exprange
+
+DOS exposure finder
+
+positional arguments:
+  exprange              Exposure ID range for dither sequence
+
+  optional arguments:
+    -h, --help            show this help message and exit
+      -p PMX_ID, --pmxid PMX_ID
+                              PMX acquisition sequence
+
+
+Example: python dithering.py -p 32638 32640 32661
