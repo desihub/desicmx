@@ -60,9 +60,10 @@ def grokdither(seqlist, obsday, petalnum, channel, fiberassigncsvfilename, night
                
              
             df = DataFrame.from_dict(petal_assign, orient='index')
-            #print(df.columns)
             if ((df[df['snr']>0.5].size >0) & (df[df['snr']>0.5][df['r']<225].size >0)) :
-                plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+petalnum+' Cam: '+str(camera)
+                #plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+petalnum+' Cam: '+str(channel).split('b')[1]
+                plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+petalnum+' Cam: '+str(channel)
+
                 ii = (np.abs(df['dra']) > 3.5* np.std(df['dra'])) |  (np.abs(df['ddec']) > 3.5* np.std(df['ddec']))
                 df = df[~ii]
 
@@ -185,14 +186,13 @@ def plot_dither_seq(exposure_sequence, obsday, petalnum_list, channel, tileid, n
 
                 df = DataFrame.from_dict(petal_assign, orient='index')
                 ax = plt.subplot(gs[ip]); ip += 1
-                plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+str(petalnum)+' Cam: '+str(camera)
+                plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+str(petalnum)+' Cam: '+str(channel)
                 ax.set_title(plot_title, fontsize=15)
 
                 if ((df[df['snr']>snr_thresh].size >0) & (df[df['snr']>snr_thresh][df['r']<225].size >0)) :
-                    plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+str(petalnum)+' Cam: '+str(camera)
+                    plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+str(petalnum)+' Cam: '+str(channel)
                     ii = (np.abs(df['dra']) > 3.5* np.std(df['dra'])) |  (np.abs(df['ddec']) > 3.5* np.std(df['ddec']))
                     df = df[~ii]
-
                     
                     df.plot(kind='scatter', x='dra', y='ddec', s=3, color='gray', ax=ax)
                     df[df['snr']>snr_thresh].plot(kind='scatter', x='dra', y='ddec', color='blue', ax=ax)
@@ -336,7 +336,7 @@ def plot_dither_seq_fc(exposure_sequence, obsday, petalnum_list, channel, tileid
         y = camfiber_tab['FIBERASSIGN_Y']
         snr = camfiber_tab['MEDIAN_CALIB_SNR']
         snr_cut = snr > snr_thresh
-        
+             
         ax.plot(x, y, ',')
         if np.sum(snr_cut) >0:
             
@@ -347,7 +347,7 @@ def plot_dither_seq_fc(exposure_sequence, obsday, petalnum_list, channel, tileid
         ax.set(aspect='equal',
                xlabel='X [mm]',
                ylabel='Y [mm]',
-               title= obsday+' - Exp '+str(expid)+' - Cam: '+str(channel).split('b')[1])
+               title= obsday+' - Exp '+str(expid)+' - Cam: '+str(channel))
         
         fig = py.figure(figsize=(10, 25), dpi=100)    
         fig.subplots_adjust(wspace=0.3,hspace=0.3, top=0.97, bottom=0.07, left=0.08, right=0.98)
@@ -384,16 +384,18 @@ def plot_dither_seq_fc(exposure_sequence, obsday, petalnum_list, channel, tileid
                 for fiber, snr, cam in zip(fibers, snrs, cams):
                     
                     if cam == channel and fiber in petal_assign:
-                        camera=channel
+                        camera = channel
                         petal_assign[fiber]['snr'] = snr
-
+                        
+                       
                 df = DataFrame.from_dict(petal_assign, orient='index')
                 ax = plt.subplot(gs[ip]); ip += 1
-                plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+str(petalnum)+' Cam: '+str(camera).split('b')[1]
+                plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+str(petalnum)+' Cam: '+str(channel)
                 ax.set_title(plot_title, fontsize=15)
+                
 
                 if ((df[df['snr']>snr_thresh].size >0) & (df[df['snr']>snr_thresh][df['r']<225].size >0)) :
-                    plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+str(petalnum)+' Cam: '+str(camera).split('b')[1]
+                    plot_title = obsday+' - Exp '+str(expid)+'- PETAL_LOC '+str(petalnum)+' Cam: '+str(channel)
                     ii = (np.abs(df['dra']) > 3.5* np.std(df['dra'])) |  (np.abs(df['ddec']) > 3.5* np.std(df['ddec']))
                     df = df[~ii]
 
