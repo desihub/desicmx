@@ -182,7 +182,8 @@ class DitherSequence:
                     dfiberdec[~ontarget] = np.nan
                     dfiberra = dfiberra[fiber]
                     dfiberdec = dfiberdec[fiber]
-                    wcs = self.lookup_wcs(fluxhead['MJD-OBS'])
+                    mjd = fluxhead['MJD-OBS']
+                    wcs = self.lookup_wcs(mjd)
                     centralwcs = self._central_wcs
                     if (~np.isfinite(centralwcs['cenra'][1]) or
                         ~np.isfinite(centralwcs['cendec'][1])):
@@ -209,12 +210,14 @@ class DitherSequence:
                         mask = ivar > meanivar / 100
                         specflux = np.trapz(flux*mask, wave)
                         specflux_ivar = 1./np.sum(ivar[mask]**-1)
+                        specflux /= exptime
+                        specflux_ivar *= exptime**2
                         # Schlegel: sum over correct wavelengths, all three
                         # filters, plus 11 pixel median filter to reject
                         # cosmics.
                         # will require being better about reading in
                         # the spectrographs together.
-                    tabrows.append((expid, exptime,
+                    tabrows.append((expid, exptime, mjd,
                                     target_id[j], target_ra[j], target_dec[j],
                                     fiber[j], objtype[j],
                                     flux_g[j], flux_r[j], flux_z[j],
@@ -223,7 +226,7 @@ class DitherSequence:
                                     x[j], y[j]))
 
         tab = Table(rows=tabrows,
-                    names=('EXPID', 'EXPTIME',
+                    names=('EXPID', 'EXPTIME', 'MJD_OBS',
                            'TARGETID', 'TARGET_RA', 'TARGET_DEC',
                            'FIBER', 'OBJTYPE',
                            'FLUX_G', 'FLUX_R', 'FLUX_Z',
@@ -268,7 +271,7 @@ class DitherSequence:
         camera = np.unique(self._exposure_table['CAMERA'])
         out = {}
         newtab = np.zeros((nfiber, nexp), dtype=[
-            ('expid', 'i4'), ('exptime', 'f4'),
+            ('expid', 'i4'), ('exptime', 'f4'), ('mjd_obs', 'f8'),
             ('targetid', 'i8'), ('camera', 'U1'),
             ('target_ra', 'f8'), ('target_dec', 'f8'),
             ('fiber', 'i4'), ('objtype', 'U3'),
