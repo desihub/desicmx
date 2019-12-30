@@ -1,0 +1,129 @@
+usage: find_exposures.py [-h] [-e [EXPID [EXPID ...]]]
+                         [-s [SEQUENCE [SEQUENCE ...]]]
+                         [-o [OBSDATE [OBSDATE ...]]]
+
+DOS exposure finder
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -e [EXPID [EXPID ...]], --expid [EXPID [EXPID ...]]
+                        Exposure ID(s)
+  -s [SEQUENCE [SEQUENCE ...]], --sequence [SEQUENCE [SEQUENCE ...]]
+                        Sequence type [GFA, FVC, Spectrograph...]
+  -o [OBSDATE [OBSDATE ...]], --obsdate [OBSDATE [OBSDATE ...]]
+                        Observation date(s) [YYYYMMDD]
+
+// -----------------------------------------------------------------------------
+
+Example:
+
+[desiobserver]$ python find_exposures.py -o 20191215 -s PMX Spectrographs
+
+   32157     20191215  Spectrographs   CALIB zeros
+   32158     20191215  Spectrographs   CALIB zeros
+   32159     20191215  Spectrographs   CALIB zeros
+   32160     20191215  Spectrographs   CALIB zeros
+   32161     20191215  Spectrographs   CALIB zeros
+   32162     20191215  Spectrographs   CALIB zeros
+   32163     20191215  Spectrographs   CALIB zeros
+   32164     20191215  Spectrographs   CALIB zeros
+   32165     20191215  Spectrographs   CALIB zeros
+   32166     20191215  Spectrographs   CALIB zeros
+   32168     20191215  Spectrographs   CALIB Arcs all
+   32169     20191215  Spectrographs   CALIB Arcs all
+   32170     20191215  Spectrographs   CALIB Arcs all
+   32171     20191215  Spectrographs   CALIB Arcs all
+   32172     20191215  Spectrographs   CALIB Arcs all
+   32175     20191215  Spectrographs   CALIB DESI-CALIB-00 LEDs only
+   32176     20191215  Spectrographs   CALIB DESI-CALIB-00 LEDs only
+   32177     20191215  Spectrographs   CALIB DESI-CALIB-00 LEDs only
+   32180     20191215  Spectrographs   CALIB DESI-CALIB-01 LEDs only
+   32181     20191215  Spectrographs   CALIB DESI-CALIB-01 LEDs only
+   32182     20191215  Spectrographs   CALIB DESI-CALIB-01 LEDs only
+   32185     20191215  Spectrographs   CALIB DESI-CALIB-02 LEDs only
+   32186     20191215  Spectrographs   CALIB DESI-CALIB-02 LEDs only
+   32187     20191215  Spectrographs   CALIB DESI-CALIB-02 LEDs only
+   32190     20191215  Spectrographs   CALIB DESI-CALIB-03 LEDs only
+   32191     20191215  Spectrographs   CALIB DESI-CALIB-03 LEDs only
+   32192     20191215  Spectrographs   CALIB DESI-CALIB-03 LEDs only
+   32195     20191215  Spectrographs   CALIB DESI-CALIB-00 to 03 all LEDs
+   32196     20191215  Spectrographs   CALIB DESI-CALIB-00 to 03 all LEDs
+   32197     20191215  Spectrographs   CALIB DESI-CALIB-00 to 03 all LEDs
+   32198     20191215  Spectrographs   CALIB DESI-CALIB-00 to 03 all LEDs
+   32199     20191215  Spectrographs   CALIB DESI-CALIB-00 to 03 all LEDs
+   32250     20191215       PMX        Commissioning
+   32270     20191215  Spectrographs   Dither tile_id 60209 (0,0)
+   32272     20191215  Spectrographs   Dither tile_id 60209 (8,8)
+   32274     20191215  Spectrographs   Dither tile_id 60209 (0,8)
+   32276     20191215  Spectrographs   Dither tile_id 60209 (-8,8)
+   32278     20191215  Spectrographs   Dither tile_id 60209 (-8,0)
+   32280     20191215  Spectrographs   Dither tile_id 60209 (0,0)
+   32282     20191215  Spectrographs   Dither tile_id 60209 (8,0)
+   32284     20191215  Spectrographs   Dither tile_id 60209 (8,-8)
+   32286     20191215  Spectrographs   Dither tile_id 60209 (0,-8)
+   32288     20191215  Spectrographs   Dither tile_id 60209 (-8,-8)
+   32290     20191215  Spectrographs   Dither tile_id 60209 (0,0)
+   32292     20191215  Spectrographs   Dither stop guide test tile_id 60209 (0,0)
+   32295     20191215  Spectrographs   Dither stop guide test tile_id 60209 (8,8)
+   32298     20191215  Spectrographs   Dither stop guide test tile_id 60209 (0,8)
+   32301     20191215  Spectrographs   Dither stop guide test tile_id 60209 (0,0)
+   32303     20191215       PMX        Commissioning
+   32336     20191215  Spectrographs   Dither stop guide test tile_id 60209 (0,0)
+   32337     20191215       PMX        Commissioning
+   32339     20191215  Spectrographs   Dither short guide test tile_id 60209 (0,0)
+   32341     20191215  Spectrographs   Dither short guide test tile_id 60209 (8,8)
+   32345     20191215  Spectrographs   Dither short guide test tile_id 60209 (0,0)
+   32387     20191215  Spectrographs   Dither short guide test tile_id 60209 (0,0)
+   32390     20191215  Spectrographs   Dither short guide test tile_id 60209 (8,8)
+   32393     20191215  Spectrographs   Dither short guide test tile_id 60209 (0,8)
+   32396     20191215  Spectrographs   Dither short guide test tile_id 60209 (0,0)
+   32460     20191215       PMX        Commissioning
+   32461     20191215       PMX        Commissioning
+   32473     20191215  Spectrographs   Dither tile_id 60209 (0 0)
+   32476     20191215  Spectrographs   Dither tile_id 60209 (8 8)
+   32479     20191215  Spectrographs   Dither tile_id 60209 (0 8)
+   32482     20191215  Spectrographs   Dither tile_id 60209 (-8 8)
+   32484     20191215  Spectrographs   Dither tile_id 60209 (0 0)
+   32486     20191215  Spectrographs   Dither tile_id 60209 (8 8)
+   32488     20191215  Spectrographs   Dither tile_id 60209 (0 8)
+   32490     20191215  Spectrographs   Dither tile_id 60209 (-8 8)
+   32492     20191215  Spectrographs   Dither tile_id 60209 (-8 0)
+   32494     20191215  Spectrographs   Dither tile_id 60209 (0 0)
+   32498     20191215  Spectrographs   Dither tile_id 60209 (8 -8)
+   32500     20191215  Spectrographs   Dither tile_id 60209 (0 -8)
+   32502     20191215  Spectrographs   Dither tile_id 60209 (-8 -8)
+   32504     20191215  Spectrographs   Dither tile_id 60209 (0 0)
+   32629     20191215       PMX        acquisition test
+   32631     20191215  Spectrographs   Dither tile_id 60147 (0 0)
+   32634     20191215  Spectrographs   Dither tile_id 60147 (8 8)
+   32637     20191215  Spectrographs   Dither tile_id 60147 (0 8)
+   32638     20191215       PMX        acquisition test
+   32640     20191215  Spectrographs   Dither tile_id 60147 (0 0)
+   32642     20191215  Spectrographs   Dither tile_id 60147 (8 8)
+   32644     20191215  Spectrographs   Dither tile_id 60147 (0 8)
+   32646     20191215  Spectrographs   Dither tile_id 60147 (-8 8)
+   32648     20191215  Spectrographs   Dither tile_id 60147 (-8 0)
+   32650     20191215  Spectrographs   Dither tile_id 60147 (0 0)
+   32652     20191215  Spectrographs   Dither tile_id 60147 (8 0)
+   32654     20191215  Spectrographs   Dither tile_id 60147 (8 -8)
+   32656     20191215  Spectrographs   Dither tile_id 60147 (0 -8)
+   32658     20191215  Spectrographs   Dither tile_id 60147 (-8 -8)
+   32660     20191215  Spectrographs   Dither tile_id 60147 (0 0)
+
+// -----------------------------------------------------------------------------
+
+usage: dithering.py [-h] [-p PMX_ID] exprange exprange
+
+DOS exposure finder
+
+positional arguments:
+  exprange              Exposure ID range for dither sequence
+
+  optional arguments:
+    -h, --help            show this help message and exit
+      -p PMX_ID, --pmxid PMX_ID
+                              PMX acquisition sequence
+
+// -----------------------------------------------------------------------------
+
+Example: python dithering.py -p 32638 32640 32661
