@@ -24,11 +24,15 @@ parser = ArgumentParser(description='Dither Guider+Spectrograph scripter')
 
 # Dithering options for file headers.
 parser.add_argument('step', type=float, help='Dither step size [arcsec]')
-parser.add_argument('-t', '--tile_id', default=0, type=int,
+parser.add_argument('-t', '--tileid', required=True, type=int,
                     help='Tile ID from fiberassign')
-parser.add_argument('-r', '--deltara', default=0, type=float,
+parser.add_argument('-r', '--tilera', required=True, type=float,
+                    help='Central RA of the tile [deg]')
+parser.add_argument('-d', '--tiledec', required=True, type=float,
+                    help='Central Dec of the tile [deg]')
+parser.add_argument('--deltara', default=0, type=float,
                     help='Ra offset of center of raster from current position')
-parser.add_argument('-d', '--deltadec', default=0, type=float,
+parser.add_argument('--deltadec', default=0, type=float,
                     help='Dec offset of center of raster from current position')
 
 args = parser.parse_args()
@@ -39,7 +43,9 @@ ra = RA
 dec = DEC
 
 step = args.step*u.arcsec # Add a unit from astropy, does not change value
-tile_id = args.tile_id
+tile_id = args.tileid
+tile_ra = args.tilera
+tile_dec = args.tiledec
 
 stepx = np.asarray([ 0,  1, -1, -1,  0,  1,  1,  0, -1, -1,  1])*step
 stepy = np.asarray([ 0,  1,  0,  0, -1,  0,  0, -1,  0,  0,  1])*step
@@ -65,6 +71,8 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                         })
 
     # Take a spectrograph exposure.
+    passthru = '{{ OFFSTRA:{:g}, OFFSTDEC:{:g}, TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format(ra-RA, dec-DEC, tile_id, tile_ra, tile_dec)
+
     dith_script.append({'sequence'         : 'Spectrographs',
                         'flavor'           : 'science',
                         'obstype'          : 'SCIENCE',
@@ -72,6 +80,7 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                         'usetemp'          : False,
                         'uselut'           : False,
                         'exptime'          : 60.0,
+                        'passthru'         : passthru,
                         'program'          : 'Dither tile_id {:05d} ({:g} {:g})'.format(tile_id, ra.to('arcsec').value, dec.to('arcsec').value)
                         })
 
