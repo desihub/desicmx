@@ -56,6 +56,8 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
     ra = ra + dx
     dec = dec + dy
 
+    passthru = '{{ OFFSTRA:{:g}, OFFSTDEC:{:g}, TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format((ra-RA).value, (dec-DEC).value, tile_id, tile_ra, tile_dec)
+
     # Start a guide sequence.
     dith_script.append({'sequence'         : 'Guide',
                         'flavor'           : 'science',
@@ -67,12 +69,11 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                         'correct_for_adc'  : False,
                         'usetemp'          : False,
                         'uselut'           : False,
+                        'passthru'         : passthru,
                         'program'          : 'Dither tile_id {:05d} ({:g} {:g})'.format(tile_id, ra.to('arcsec').value, dec.to('arcsec').value)
                         })
 
     # Take a spectrograph exposure.
-    passthru = '{{ OFFSTRA:{:g}, OFFSTDEC:{:g}, TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format(ra-RA, dec-DEC, tile_id, tile_ra, tile_dec)
-
     dith_script.append({'sequence'         : 'Spectrographs',
                         'flavor'           : 'science',
                         'obstype'          : 'SCIENCE',
