@@ -56,7 +56,7 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
     ra = ra + dx
     dec = dec + dy
 
-    passthru = '{{ OFFSTRA:{:g}, OFFSTDEC:{:g}, TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format((ra-RA).value, (dec-DEC).value, tile_id, tile_ra, tile_dec)
+    passthru = '{{ OFFSTRA:{:g}, OFFSTDEC:{:g}, TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format((ra-RA).to('arcsec').value, (dec-DEC).to('arcsec').value, tile_id, tile_ra, tile_dec)
 
     # Start a guide sequence.
     dith_script.append({'sequence'         : 'Guide',
@@ -64,8 +64,8 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                         'exptime'          : 5.0,
                         'action'           : 'start_guiding',
                         'acquisition_time' : 15.0,
-                        'deltara'          : dx.value,
-                        'deltadec'         : dy.value,
+                        'deltara'          : dx.to('arcsec').value,
+                        'deltadec'         : dy.to('arcsec').value,
                         'correct_for_adc'  : False,
                         'usetemp'          : False,
                         'uselut'           : False,
