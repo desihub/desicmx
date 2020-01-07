@@ -44,6 +44,7 @@ class DitherSequence:
         
         coords = config['coordinates']
         self._dithertype = coords['dithertype']
+        self._wcsind = coords['wcsind'] if 'wcsind' in coords else 'after'
         
         self._wcs = fits.getdata(coords['wcsfile'], 2)
         self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
@@ -55,7 +56,8 @@ class DitherSequence:
                 fadir, 'fiberassign-%s.fits' % coords['ditheredtilenum']))
             self._unditherfa = fits.getdata(os.path.join(
                 fadir, 'fiberassign-%s.fits' % coords['unditheredtilenum']))
-            expnum = [int(fn.split('-')[1]) for fn in self._wcs['filename']]
+            expnum = [int(fn.split('.')[0].split('-')[1])
+                      for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
             self._central_wcs = self._wcs[centralind]
 
@@ -173,6 +175,8 @@ class DitherSequence:
                     ontarget = ((self._ditherfa['targetid'] ==
                                  self._unditherfa['targetid']) &
                                 (self._ditherfa['objtype'] == 'TGT'))
+                    ontarget = (ontarget &
+                                (self._unditherfa['morphtype'] == 'PSF'))
                     dfiberra = (dithra-udithra)*np.cos(np.radians(udithdec))*60*60
                     dfiberdec = (dithdec-udithdec)*60*60
                     if not np.all(self._ditherfa['FIBER'] ==
@@ -242,11 +246,13 @@ class DitherSequence:
         # expfn = self._exposure_files[expnum]
         # mjd = fits.getheader(expfn)['MJD-OBS']
         ind = np.searchsorted(self._wcs['mjd_obs'], mjd)
+        if self._wcsind == 'before':
+            ind -= 1
         if ind >= len(self._wcs):
             return np.array(((np.nan,)*3, (np.nan,)*3),
                             dtype=[('cenra', '3f8'), ('cendec', '3f8')])
         twcs = self._wcs[ind]
-        if twcs['mjd_obs'] <= mjd:
+        if (twcs['mjd_obs'] <= mjd) & (self._wcsind != 'before'):
             raise ValueError('Something confusing with wcs list')
         return twcs
 
@@ -307,4 +313,3 @@ class DitherSequence:
             output.append(filenames)
 
         return '\n'.join(output)
-

@@ -334,15 +334,17 @@ def fake_data(nexp=10, nfiber=5000, mseeing=1.1, devseeing=0.2, meantrans=0.4,
 
 
 def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
-                truth=None, verbose=False):
+                truth=None, verbose=False, useguess=True):
     nfib, nexp = data.shape
-    guess = initial_guess(data, guessflux, psffun)
-    # guess = dict(xfiboff=np.zeros(nfib, dtype='f8'),
-    #              yfiboff=np.zeros(nfib, dtype='f8'),
-    #              xtel=0,
-    #              ytel=0,
-    #              fwhm=1.,
-    #              transparency=1.)
+    if useguess:
+        guess = initial_guess(data, guessflux, psffun)
+    else:
+        guess = dict(xfiboff=np.zeros(nfib, dtype='f8'),
+                     yfiboff=np.zeros(nfib, dtype='f8'),
+                     xtel=0,
+                     ytel=0,
+                     fwhm=1.,
+                     transparency=1.)
     guessfib = [guessflux, guess['xfiboff'], guess['yfiboff']]
     guessim = [np.ones(nexp, dtype='f4')*guess['xtel'], 
                np.ones(nexp, dtype='f4')*guess['ytel'],
@@ -383,6 +385,10 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
     chi2fib = np.sum(chifib**2, axis=1)
     chi2fibnull = np.sum(data['spectroflux']**2*data['spectroflux_ivar'],
                          axis=1)
+    fiber_ditherfit_ra = (data['delta_x_arcsec']+guessfib[1][:, None]+
+                          guessim[0][None, :]+data['target_ra'])
+    fiber_ditherfit_dec = (data['delta_y_arcsec']+guessfib[2][:, None]+
+                           guessim[1][None, :]+data['target_dec'])
 
     return dict(xtel=guessim[0], dxtel=imunc[:, 0],
                 ytel=guessim[1], dytel=imunc[:, 1],
@@ -392,7 +398,10 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
                 xfiboff=guessfib[1], dxfiboff=fibunc[:, 1],
                 yfiboff=guessfib[2], dyfiboff=fibunc[:, 2],
                 chi2fib=chi2fib, chi2fibnull=chi2fibnull,
-                guessflux=guessflux)
+                guessflux=guessflux, fiber=data['fiber'][:, 0],
+                expid=data['expid'][0, :],
+                fiber_ditherfit_ra=fiber_ditherfit_ra,
+                fiber_ditherfit_dec=fiber_ditherfit_dec)
 
 
 def test_performance(fluxguessaccuracy=0.2, verbose=False, niter=10, 
@@ -700,6 +709,17 @@ def guess_starcounts(flux):
     return flux*10.**((26.8-22.5)/2.5)
 
 
+def quiver_plot_basic(xfocal, yfocal, xfiboff, yfiboff):
+    from matplotlib import pyplot as p
+    p.quiver(xfocal, yfocal, xfiboff, yfiboff, scale=0.1, scale_units='x')
+    p.gca().set_aspect('equal')
+    p.xlabel('xfocal')
+    p.ylabel('yfocal')
+    p.text(0.1, 0.9, 'fiber offsets: 10 mm = 1"', transform=p.gca().transAxes)
+    p.xlim(-450, 450)
+    p.ylim(-450, 450)
+    
+
 def quiver_plot(sol, data):
     dchi2frac = (sol['chi2fibnull']-sol['chi2fib'])/sol['chi2fibnull']
     m = dchi2frac > 0.9
@@ -708,14 +728,9 @@ def quiver_plot(sol, data):
     p.gcf().set_size_inches(6, 5, forward=True)
     xoff = np.mean(sol['xfiboff'][m])
     yoff = np.mean(sol['yfiboff'][m])
-    p.quiver(data['xfocal'][m, 0], data['yfocal'][m, 0],
-             sol['xfiboff'][m]-xoff,
-             sol['yfiboff'][m]-yoff,
-             scale=0.1, scale_units='x')
-    p.gca().set_aspect('equal')
-    p.xlabel('xfocal')
-    p.ylabel('yfocal')
-    p.text(0.1, 0.9, 'fiber offsets: 10 mm = 1"', transform=p.gca().transAxes)
+    quiver_plot_basic(data['xfocal'][m, 0], data['yfocal'][m, 0],
+                      sol['xfiboff'][m]-xoff,
+                      sol['yfiboff'][m]-yoff)
 
 
 def telparams_plot(sol, data):
@@ -735,7 +750,7 @@ def telparams_plot(sol, data):
     p.xlabel('MJD - %d' % minmjd)
     p.legend(loc='upper left')
     p.twinx()
-    p.plot(dmjd, sol['fwhm'], 'r+', label='FWHM')
+    p.plot(dmjd, sol['fwhm'], 'rx', label='FWHM')
     p.plot(dmjd, sol['transparency'], 'bx', label='transparency')
     p.ylabel('FWHM, transparency')
     p.legend(loc='upper right')
@@ -761,36 +776,50 @@ def fiber_plot(sol, data, i, guess=None):
     p.title('Fiber %d' % data['fiber'][i, 0])
 
 
-def process(data, camera, outdir='.', label='dither%s',
-            usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            niter=10, overwrite=False):
-    from functools import partial
+def prune_data(data, camera, snrcut=5, atleastnfib=20, atleastnim=5,
+               snrbrightestcut=5, usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]):
     mgoodfib = ~np.all(~np.isfinite(data[camera]['delta_x_arcsec']), axis=1)
     mgoodfib &= np.array([fib // 500 in usepetals
                           for fib in data[camera]['fiber'][:, 0]])
     mgoodim = ~np.all(~np.isfinite(data[camera]['delta_x_arcsec']), axis=0)
-    tdata = {x: data[x][np.ix_(mgoodfib, mgoodim)]for x in data}
+    tdata = {x: data[x][np.ix_(mgoodfib, mgoodim)] for x in data}
     for i in range(2):
-        hassignal = np.array([
-            ((tdata[x]['spectroflux'] *
-              np.sqrt(tdata[x]['spectroflux_ivar'])) > 5)
-            for x in tdata])
+        snr =  np.array([tdata[x]['spectroflux'] *
+                         np.sqrt(tdata[x]['spectroflux_ivar']) for x in tdata])
+        hassignal = snr > snrcut
         hassignal = np.sum(hassignal, axis=0) >= 2
-        # 5 sigmal in at least two cameras
-        mgoodim = np.sum(hassignal, axis=0) > 20
-        mgoodfib = np.sum(hassignal, axis=1) > 5
+        mgoodim = np.sum(hassignal, axis=0) > atleastnfib
+        mgoodfib = np.sum(hassignal, axis=1) > atleastnim
+        mgoodfib = mgoodfib & (np.max(snr, axis=(0, 2)) > snrbrightestcut)
         tdata = {x: tdata[x][np.ix_(mgoodfib, mgoodim)] for x in tdata}
+    return tdata
+
+
+def process(data, camera, outdir='.', label='dither%s',
+            niter=10, overwrite=False, snrcut=5, atleastnfib=20,
+            atleastnim=5, snrbrightestcut=5, **kw):
+    from functools import partial
+    tdata = prune_data(data, camera, snrcut=snrcut, atleastnfib=atleastnfib,
+                       atleastnim=atleastnim, snrbrightestcut=snrbrightestcut,
+                       usepetals=usepetals)
     tdata = tdata[camera]
+    print('Attempting to solve for %d fibers in %d exposures.' % tdata.shape)
+    print('Max snr: %5.1f' %
+          np.max(tdata['spectroflux'] *
+                 np.sqrt(tdata['spectroflux_ivar'])))
     guessbanddict = {'B':'g', 'R':'r', 'Z':'z'}
     guess = guess_starcounts(
         tdata['flux_'+guessbanddict[camera]][:, 0])
     psffun = partial(SimpleFiberIntegratedPSF, psffun=moffat, pixscale=0.2)
-    sol = fit_iterate(tdata, guess, psffun=psffun, verbose=True, niter=niter)
+    sol = fit_iterate(tdata, guess, psffun=psffun, verbose=True, niter=niter,
+                      **kw)
     nfib, nim = tdata.shape
-    dtype = [(k, ('%d' % nfib)+sol[k].dtype.descr[0][1]) for k in sol]
-    out = np.zeros(nim, dtype)
+    dtype = [(k, ('%d' % nim)+sol[k].dtype.descr[0][1]) for k in sol]
+    out = np.zeros(nfib, dtype)
     for k in sol:
-        if len(sol[k]) == out.shape[0]:
+        if len(sol[k].shape) == 2:
+            out[k] = sol[k]
+        elif len(sol[k]) == out.shape[0]:
             out[k] = sol[k].reshape(-1, 1)
         else:
             out[k] = sol[k].reshape(1, -1)
@@ -867,12 +896,20 @@ def multicolor_fiber_plot(res):
 
 def process_all(data, outdir='.', label='dither%s',
                 usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-                niter=10, overwrite=False):
+                niter=10, overwrite=False, **kw):
+    from copy import deepcopy
+    data = deepcopy(data)
+    for c in data:
+        m = np.isfinite(data[c]['spectroflux_ivar'])
+        m[m] = data[c]['spectroflux_ivar'][m] > 0
+        data[c]['spectroflux_ivar'][m] = (
+            data[c]['spectroflux_ivar'][m]**(-1) +
+            (0.01*data[c]['spectroflux'][m])**2)**(-1)
     res = {}
     for c in data:
         res[c] = process(data, c, outdir=outdir, label=label,
                          usepetals=usepetals, niter=niter,
-                         overwrite=overwrite)
+                         overwrite=overwrite, **kw)
     from matplotlib.backends.backend_pdf import PdfPages
     from matplotlib import pyplot as p
     pdffn = os.path.join(outdir, (label % 'BRZ')+'.pdf')
@@ -885,3 +922,75 @@ def process_all(data, outdir='.', label='dither%s',
     pdf.savefig()
     pdf.close()
     return res
+
+
+def plot_one_exp(data, expid, usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+                 snrcut=100, xrange=[-15, 15], yrange=[-15, 15]):
+    from matplotlib import pyplot as p
+    guessbanddict = {'B':'g', 'R':'r', 'Z':'z', 'A':'r'}
+    newdata = {}
+    for key in data:
+        newdata[key] = data[key]
+    data = newdata
+    data['A'] = data['R']
+    data['A']['spectroflux'] = np.median(np.array([
+        data[c]['spectroflux'] for c in 'BRZ']), axis=0)
+    data['A']['spectroflux_ivar'] = np.median(np.array([
+        data[c]['spectroflux_ivar'] for c in 'BRZ']), axis=0)
+    for i, camera in enumerate('BRZA'):
+        tdata = data[camera]
+        ind = np.flatnonzero(tdata['expid'][0, :] == expid)[0]
+        guess = guess_starcounts(
+            tdata['flux_'+guessbanddict[camera]][:, 0])
+        p.subplot(2, 4, i+1)
+        relflux = -2.5*np.log10(np.clip(tdata['spectroflux'], 1, np.inf)/
+                                guess.reshape(-1, 1))
+        snr = tdata['spectroflux']*np.sqrt(tdata['spectroflux_ivar'])
+        good = ((snr[:, ind] > 100) & (relflux[:, ind] < 5) &
+                np.isfinite(relflux[:, ind]) & 
+                np.isfinite(tdata['delta_x_arcsec'][:, ind]))
+        m = np.array([tpet in usepetals
+                      for tpet in tdata['fiber'][:, ind] // 500])
+        sz = 0.05+5*good
+        p.scatter(tdata['xfocal'][~good & m, ind],
+                  tdata['yfocal'][~good & m, ind],
+                  c=relflux[~good & m, ind], s=sz[~good & m], vmax=5, vmin=0,
+                  rasterized=True)
+        p.scatter(tdata['xfocal'][good & m, ind],
+                  tdata['yfocal'][good & m, ind],
+                  c=relflux[good & m, ind], s=sz[good & m], vmax=5, vmin=0,
+                  rasterized=True)
+        p.title(camera)
+        p.suptitle('EXPID: %d' % expid)
+        p.gca().set_aspect('equal')
+        p.xlim(-450, 450)
+        p.ylim(-450, 450)
+        p.subplot(2, 4, i+5)
+        p.scatter(tdata['delta_x_arcsec'][~good & m, ind],
+                  tdata['delta_y_arcsec'][~good & m, ind],
+                  c=relflux[~good & m, ind], s=sz[~good & m], vmax=5, vmin=0,
+                  rasterized=True)
+        p.scatter(tdata['delta_x_arcsec'][good & m, ind],
+                  tdata['delta_y_arcsec'][good & m, ind],
+                  c=relflux[good & m, ind], s=sz[good & m], vmax=5, vmin=0,
+                  rasterized=True)
+        p.gca().set_aspect('equal')
+        p.xlim(*xrange)
+        p.ylim(*yrange)
+
+    
+def plot_sequence(sequence, fn, **kw):
+    res = sequence.rearrange_table()
+    exps = res['R']['expid'][0, :]
+    from matplotlib.backends.backend_pdf import PdfPages
+    pdf = PdfPages(fn)
+    from matplotlib import pyplot as p
+    p.figure()
+    p.gcf().set_size_inches(14, 7, forward=True)
+    for i, exp in enumerate(exps):
+        print(i, len(exps))
+        p.clf()
+        plot_one_exp(res, exp, **kw)
+        pdf.savefig()
+    pdf.close()
+        
