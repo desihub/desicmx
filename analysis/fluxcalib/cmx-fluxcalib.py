@@ -1,27 +1,22 @@
 import os, argparse, pdb
 import numpy as np
+from glob import glob
 
 import fitsio
-from glob import glob
 import desispec.io
-
-#import desimodel.io
-#import matplotlib.pyplot as plt
 
 datadir = os.path.join(os.getenv('DESI_ROOT'), 'spectro', 'data')
 reduxdir = os.path.join(os.getenv('DESI_ROOT'), 'spectro', 'redux', 'daily', 'exposures')
 nightwatchdir = os.path.join(os.getenv('DESI_ROOT'), 'spectro', 'nightwatch', 'kpno')
 outdir = os.path.join(os.getenv('DESI_ROOT'), 'spectro', 'redux', 'ioannis', 'cmx', 'fluxcalib')
-#outdir = os.path.join(os.getenv('DESI_ROOT'), 'ioannis', 'cmx', 'fluxcalib')
 
-def read_and_stack_nightwatch(night, verbose=False, overwrite=False):
+def gather_qa(night, verbose=False, overwrite=False):
     """Read and stack all the nightwatch QA files for a given night.
 
     """
     import json
     import astropy.table
     from astropy.table import Table
-    #import desimodel.io
 
     stackwatchfile = os.path.join(outdir, 'qa-nightwatch-{}.fits'.format(str(night)))
     fiberassignmapfile = os.path.join(outdir, 'fiberassignmap-{}.fits'.format(str(night)))
@@ -128,53 +123,122 @@ def select_stdstars(data, fiberassignmap, snrcut=10, verbose=False):
         fibermap[target_col][istd_reject] = 0
 
     return fibermap
+
+def update_frame_fibermaps(data, fiberassignmap, verbose=False, overwrite=False):
+    """Update the fibermaps in each frame file with the necessary information on
+    targeted standard stars.
+
+    """
+    from desitarget.targets import main_cmx_or_sv
     
-def main():
-
-    parser = argparse.ArgumentParser(description='Derive flux-calibrated spectra and estimate the throughput.')
-
-    parser.add_argument('-n', '--night', type=int, default=20200102, required=True, help='night')
-    parser.add_argument('--snrcut', type=np.float32, default=10.0, help='S/N cut.')
-    parser.add_argument('--verbose', action='store_true', help='Be verbose.')
-    parser.add_argument('--overwrite', action='store_true', help='Overwrite existing files.')
-    args = parser.parse_args()
-
-    data, fiberassignmap = read_and_stack_nightwatch(args.night, verbose=args.verbose,
-                                                     overwrite=args.overwrite)
-
+    night = data['NIGHT'][0]
+    
     # For each EXPID, find the fibers with standard stars *and* good spectra.
     for expid in set(data['EXPID']):
-        thismap = (fiberassignmap['EXPID'] == '{:08d}'.format(expid)) * (fiberassignmap['NIGHT'] == str(args.night))
-        thisspec = (data['EXPID'] == expid) * (data['NIGHT'] == args.night)
+        thismap = (fiberassignmap['EXPID'] == '{:08d}'.format(expid)) * (fiberassignmap['NIGHT'] == str(night))
+        thisspec = (data['EXPID'] == expid) * (data['NIGHT'] == night)
         
-        fullfibermap = select_stdstars(data[thisspec], fiberassignmap[thismap],
-                                       snrcut=args.snrcut, verbose=args.verbose)
+        fullfibermap = select_stdstars(data[thisspec], fiberassignmap[thismap], verbose=verbose)
         
         #from desitarget.cmx.cmx_targetmask import cmx_mask  
         #print(np.sum(fibermap['CMX_TARGET'] & cmx_mask.mask('STD_BRIGHT') != 0))
 
         strexpid = '{:08d}'.format(expid)
-        framefiles = glob(os.path.join(reduxdir, str(args.night), strexpid, 'frame-[brz][0-9]-{}.fits'.format(strexpid)))
+        framefiles = glob(os.path.join(reduxdir, str(night), strexpid, 'frame-[brz][0-9]-{}.fits'.format(strexpid)))
         for framefile in framefiles:
-            outframefile = os.path.join(outdir, str(args.night), strexpid, os.path.basename(framefile))
-            if os.path.isfile(outframefile) and not args.overwrite:
+            outframefile = os.path.join(outdir, str(night), strexpid, os.path.basename(framefile))
+            if os.path.isfile(outframefile) and not overwrite:
                 print('File exists {}'.format(outframefile))
                 continue
 
             # Read and copy all the columns!
-            if args.verbose:
-                print('Reading {}'.format(framefile))
+            #if verbose:
+            #    print('Reading {}'.format(framefile))
             fr = desispec.io.read_frame(framefile)
             fibermap = fullfibermap[np.isin(fullfibermap['FIBER'], fr.fibermap['FIBER'])]
-            for col in fibermap.dtype.names:
-                if col in fr.fibermap.dtype.names:
-                    fr.fibermap[col] = fibermap[col]
 
-            if args.verbose:
-                print('  Writing {}'.format(outframefile))
-            desispec.io.write_frame(outframefile, fr)
+            # Require at least one standard star on this petal.
+            target_colnames, target_masks, survey = main_cmx_or_sv(fibermap)
+            target_col, target_mask = target_colnames[0], target_masks[0] # CMX_TARGET, CMX_MASK for commissioning
+            istd = np.where((fibermap[target_col] & target_mask.mask('STD_BRIGHT') != 0))[0]
+            if len(istd) > 0:
+                from desispec.fluxcalibration import isStdStar
+                print(isStdStar(fibermap))
+                pdb.set_trace()
+                for col in fibermap.dtype.names:
+                    if col in fr.fibermap.dtype.names:
+                        fr.fibermap[col] = fibermap[col]
 
+                if verbose:
+                    print('  Writing {}'.format(outframefile))
+                desispec.io.write_frame(outframefile, fr)
 
+        print('Returning after first EXPID - fix me.')
+        return
+
+def main():
+
+    parser = argparse.ArgumentParser(description='Derive flux-calibrated spectra and estimate the throughput.')
+
+    parser.add_argument('-n', '--night', type=int, default=20200102, required=True, help='night')
+    parser.add_argument('--gather-qa', action='store_true', help='Gather and stack nightwatch QA files.')
+    parser.add_argument('--update-fibermaps', action='store_true', help='Update fibermap files')
+    parser.add_argument('--fit-stdstars', action='store_true', help='Fit the standard stars.')
+
+    parser.add_argument('--verbose', action='store_true', help='Be verbose.')
+    parser.add_argument('--overwrite', action='store_true', help='Overwrite existing files.')
+    args = parser.parse_args()
+
+    # Gather QA files
+    data, fiberassignmap = gather_qa(args.night, verbose=args.verbose, overwrite=args.gather_qa)
+
+    # Update fibermap and frame files.
+    if args.update_fibermaps:
+        update_frame_fibermaps(data, fiberassignmap, verbose=args.verbose, overwrite=args.overwrite)
+
+    # Fit the standard stars.
+    if args.fit_stdstars:
+        from desispec.calibfinder import findcalibfile, CalibFinder
+
+        night, overwrite = args.night, args.overwrite
+        starmodelfile = os.path.join(os.getenv('DESI_BASIS_TEMPLATES'), 'stdstar_templates_v2.2.fits')
+                
+        allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+        for expiddir in allexpiddir:
+            expid = os.path.basename(expiddir)
+            # Process each spectrograph separately.
+            for spectro in range(9):
+                outstdfile = os.path.join(outdir, 'stdstars-{}-{}.fits'.format(str(spectro), expid))
+                if os.path.isfile(outstdfile) and not overwrite:
+                    print('File exists {}'.format(outstdfile))
+                    continue
+                    
+                framefiles = sorted(glob(os.path.join(expiddir, 'frame-[brz]{}-{}.fits'.format(str(spectro), expid))))
+                # Gather the calibration files.
+                if len(framefiles) == 3:
+                    skymodelfiles = [framefile.replace(outdir, reduxdir).replace('frame-', 'sky-') for framefile in framefiles]
+                    fiberflatfiles = []
+                    for framefile in framefiles:
+                        hdr = fitsio.read_header(framefile)
+                        calib = CalibFinder([hdr])
+                        fiberflatfiles.append(os.path.join(os.getenv('DESI_SPECTRO_CALIB'), calib.data['FIBERFLAT']))
+
+                    cmd = 'desi_fit_stdstars --frames {framefiles} --skymodels {skymodelfiles} --fiberflats {fiberflatfiles} '
+                    cmd += '--starmodels {starmodelfile} --outfile {outstdfile}'
+                    cmd = cmd.format(framefiles=' '.join(framefiles),
+                                     skymodelfiles=' '.join(skymodelfiles),
+                                     fiberflatfiles=' '.join(fiberflatfiles),
+                                     starmodelfile=starmodelfile,
+                                     outstdfile=outstdfile)
+                    print(cmd)
+                    os.system(cmd)
+        pdb.set_trace()
+
+#desi_fit_stdstars --frames 00028833/frame-*.fits --skymodels 00028833/sky-*.fits --fiberflats $DESI_SPECTRO_CALIB/spec/sp3/fiberflat-sm4-*-20191108.fits --starmodels $DESI_BASIS_TEMPLATES/stdstar_templates_v2.2.fits --outfile stdstars-3-00028833.fits
+#desi_compute_fluxcalibration  --infile 00028833/frame-b3-*.fits --sky 00028833/sky-b3-*.fits --fiberflat $DESI_SPECTRO_CALIB/spec/sp3/fiberflat-sm4-b-20191108.fits --models stdstars-3-00028833.fits --outfile fluxcalib-b3-00028833.fits --delta-color-cut 12
+#
+#./plot_fluxcalib.py fluxcalib-*-00029181.fits /project/projectdirs/desi/datachallenge/reference_runs/19.9/spectro/redux/mini/exposures/20200411\
+#/00000041/calib-*4-00000041.fits                                                                                                                
 
 
 if __name__ == '__main__':
