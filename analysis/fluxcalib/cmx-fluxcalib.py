@@ -4,6 +4,8 @@ from glob import glob
 
 import fitsio
 import desispec.io
+from desispec.calibfinder import CalibFinder
+from desispec.fluxcalibration import isStdStar
 
 datadir = os.path.join(os.getenv('DESI_ROOT'), 'spectro', 'data')
 reduxdir = os.path.join(os.getenv('DESI_ROOT'), 'spectro', 'redux', 'daily', 'exposures')
@@ -97,9 +99,11 @@ def select_stdstars(data, fiberassignmap, snrcut=10, verbose=False):
     fibermap = Table(fitsio.read(fibermapfile))#, columns=['CMX_TARGET']))
 
     # Pre-select standards
+    istd = np.where(isStdStar(fibermap))[0]
     target_colnames, target_masks, survey = main_cmx_or_sv(fibermap)
     target_col, target_mask = target_colnames[0], target_masks[0] # CMX_TARGET, CMX_MASK for commissioning
-    istd = np.where((fibermap[target_col] & target_mask.mask('STD_BRIGHT') != 0))[0]
+    #istd = np.where((fibermap[target_col] & target_mask.mask('STD_BRIGHT') != 0))[0]
+    
     # For each standard, apply a minimum S/N cut (in any camera) to
     # subselect the fibers that were reasonably centered on the fiber.
     reject = np.ones(len(istd), dtype=bool)
@@ -110,17 +114,23 @@ def select_stdstars(data, fiberassignmap, snrcut=10, verbose=False):
                 isnr = np.where(data['MEDIAN_CALIB_SNR'][wspec] > snrcut)[0]
                 if len(isnr) > 0:
                     reject[ii] = False
+                    
+    if np.sum(~reject) > 0:
+        istd_keep = istd[~reject]
+    else:
+        istd_keep = []
     if np.sum(reject) > 0:
         istd_reject = istd[reject]
     else:
-        istd_reject = np.array([])
-    if verbose:
-        print('EXPID={}, TILEID={}, nstd={}/{}'.format(
-            expid, tileid, len(istd)-len(istd_reject), len(istd), snrcut))
-
+        istd_reject = []
+        
     # Hack! Set the targeting bit for the failed standards to zero!
     if len(istd_reject) > 0:
         fibermap[target_col][istd_reject] = 0
+
+    if verbose:
+        print('EXPID={}, TILEID={}, NSTD={}/{}'.format(
+            expid, tileid, len(istd_keep), len(istd), snrcut))
 
     return fibermap
 
@@ -158,23 +168,247 @@ def update_frame_fibermaps(data, fiberassignmap, verbose=False, overwrite=False)
             fibermap = fullfibermap[np.isin(fullfibermap['FIBER'], fr.fibermap['FIBER'])]
 
             # Require at least one standard star on this petal.
-            target_colnames, target_masks, survey = main_cmx_or_sv(fibermap)
-            target_col, target_mask = target_colnames[0], target_masks[0] # CMX_TARGET, CMX_MASK for commissioning
-            istd = np.where((fibermap[target_col] & target_mask.mask('STD_BRIGHT') != 0))[0]
+            istd = np.where(isStdStar(fibermap))[0]
+            #target_colnames, target_masks, survey = main_cmx_or_sv(fibermap)
+            #target_col, target_mask = target_colnames[0], target_masks[0] # CMX_TARGET, CMX_MASK for commissioning
+            #istd = np.where((fibermap[target_col] & target_mask.mask('STD_BRIGHT') != 0))[0]
             if len(istd) > 0:
-                from desispec.fluxcalibration import isStdStar
-                print(isStdStar(fibermap))
-                pdb.set_trace()
-                for col in fibermap.dtype.names:
-                    if col in fr.fibermap.dtype.names:
-                        fr.fibermap[col] = fibermap[col]
+                # Fragile. desi_proc should be smarter about how it initializes
+                # the dummy fibermap and/or we should be smarter about what
+                # columns we assume that desi_proc has added...
+                fibermap['OBJTYPE'] = fr.fibermap['OBJTYPE'] # fragile!
+                fibermap['DESI_TARGET'] |= fr.fibermap['DESI_TARGET'] # fragile!
+                fr.fibermap = fibermap
 
                 if verbose:
-                    print('  Writing {}'.format(outframefile))
+                    print('Writing {}'.format(outframefile))
                 desispec.io.write_frame(outframefile, fr)
 
         print('Returning after first EXPID - fix me.')
         return
+
+def fit_stdstars(night, verbose=False, overwrite=False):
+    """Fit the standards on each petal.
+
+    desi_fit_stdstars --frames 00028833/frame-*.fits --skymodels 00028833/sky-*.fits \
+      --fiberflats $DESI_SPECTRO_CALIB/spec/sp3/fiberflat-sm4-*-20191108.fits \
+      --starmodels $DESI_BASIS_TEMPLATES/stdstar_templates_v2.2.fits --outfile stdstars-3-00028833.fits
+
+    """
+    starmodelfile = os.path.join(os.getenv('DESI_BASIS_TEMPLATES'), 'stdstar_templates_v2.2.fits')
+
+    allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+    for expiddir in allexpiddir:
+        expid = os.path.basename(expiddir)
+        # Process each spectrograph separately.
+        for spectro in np.arange(10):
+            outstdfile = os.path.join(expiddir, 'stdstars-{}-{}.fits'.format(str(spectro), expid))
+            if os.path.isfile(outstdfile) and not overwrite:
+                print('File exists {}'.format(outstdfile))
+                continue
+
+            framefiles = sorted(glob(os.path.join(expiddir, 'frame-[brz]{}-{}.fits'.format(str(spectro), expid))))
+            # Gather the calibration files.
+            if len(framefiles) == 3:
+                skymodelfiles = [framefile.replace(outdir, reduxdir).replace('frame-', 'sky-') for framefile in framefiles]
+                fiberflatfiles = []
+                for framefile in framefiles:
+                    calib = CalibFinder([fitsio.read_header(framefile)])
+                    fiberflatfiles.append(os.path.join(os.getenv('DESI_SPECTRO_CALIB'), calib.data['FIBERFLAT']))
+
+                cmd = 'desi_fit_stdstars --frames {framefiles} --skymodels {skymodelfiles} --fiberflats {fiberflatfiles} '
+                cmd += '--starmodels {starmodelfile} --outfile {outstdfile}'
+                cmd = cmd.format(framefiles=' '.join(framefiles),
+                                 skymodelfiles=' '.join(skymodelfiles),
+                                 fiberflatfiles=' '.join(fiberflatfiles),
+                                 starmodelfile=starmodelfile,
+                                 outstdfile=outstdfile)
+                #print(cmd)
+                os.system(cmd)
+
+def fluxcalib(night, verbose=False, overwrite=False):
+    """Perform flux-calibration.
+
+    desi_compute_fluxcalibration  --infile 00028833/frame-b3-*.fits --sky 00028833/sky-b3-*.fits \
+      --fiberflat $DESI_SPECTRO_CALIB/spec/sp3/fiberflat-sm4-b-20191108.fits --models stdstars-3-00028833.fits \
+      --outfile fluxcalib-b3-00028833.fits --delta-color-cut 12
+
+    """
+    allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+    for expiddir in allexpiddir:
+        expid = os.path.basename(expiddir)
+        
+        # Process each spectrograph separately.
+        for spectro in np.arange(10):
+            modelsfile = os.path.join(expiddir, 'stdstars-{}-{}.fits'.format(str(spectro), expid))
+            if os.path.isfile(modelsfile):
+                framefiles = sorted(glob(os.path.join(expiddir, 'frame-[brz]{}-{}.fits'.format(str(spectro), expid))))
+                for framefile in framefiles:
+                    outcalibfile = framefile.replace('frame-', 'fluxcalib-')
+                    if os.path.isfile(outcalibfile) and not overwrite:
+                        print('File exists {}'.format(outcalibfile))
+                        continue
+                    
+                    # Gather the calibration files.
+                    skyfile = framefile.replace(outdir, reduxdir).replace('frame-', 'sky-')
+                    calib = CalibFinder([fitsio.read_header(framefile)])
+                    fiberflatfile = os.path.join(os.getenv('DESI_SPECTRO_CALIB'), calib.data['FIBERFLAT'])
+
+                    cmd = 'desi_compute_fluxcalibration --infile {framefile} --sky {skyfile} '
+                    cmd += '--fiberflat {fiberflatfile} --models {modelsfile} --outfile {outcalibfile} '
+                    cmd += '--delta-color-cut 12'
+                    cmd = cmd.format(framefile=framefile, skyfile=skyfile,
+                                     fiberflatfile=fiberflatfile, modelsfile=modelsfile,
+                                     outcalibfile=outcalibfile)
+                    #print(cmd)
+                    os.system(cmd)
+
+def process_exposures(night, verbose=False, overwrite=False):
+    """Process all exposures and write out cFrame files.
+
+    usage: desi_process_exposure [-h] -i INFILE [--fiberflat FIBERFLAT]
+                                 [--sky SKY] [--calib CALIB] -o OUTFILE
+                                 [--cosmics-nsig COSMICS_NSIG]
+                                 [--sky-throughput-correction]
+    Apply fiberflat, sky subtraction and calibration.
+    optional arguments:
+      -h, --help            show this help message and exit
+      -i INFILE, --infile INFILE
+                            path of DESI exposure frame fits file
+      --fiberflat FIBERFLAT
+                            path of DESI fiberflat fits file
+      --sky SKY             path of DESI sky fits file
+      --calib CALIB         path of DESI calibration fits file
+      -o OUTFILE, --outfile OUTFILE
+                            path of DESI sky fits file
+      --cosmics-nsig COSMICS_NSIG
+                            n sigma rejection for cosmics in 1D (default, no
+                            rejection)
+      --sky-throughput-correction
+                            apply a throughput correction when subtraction the sky
+
+    """
+    allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+    for expiddir in allexpiddir:
+        expid = os.path.basename(expiddir)
+
+        framefiles = sorted(glob(os.path.join(expiddir, 'frame-[brz]?-{}.fits'.format(expid))))
+        for framefile in framefiles:
+            outframefile = framefile.replace('frame-', 'cframe-')
+            if os.path.isfile(outframefile) and not overwrite:
+                print('File exists {}'.format(outframefile))
+                continue
+
+            # Gather the calibration files.
+            skyfile = framefile.replace(outdir, reduxdir).replace('frame-', 'sky-')
+            calib = CalibFinder([fitsio.read_header(framefile)])
+            fiberflatfile = os.path.join(os.getenv('DESI_SPECTRO_CALIB'), calib.data['FIBERFLAT'])
+            calibfile = framefile.replace('frame-', 'fluxcalib-')
+
+            cmd = 'desi_process_exposure --infile {framefile} --sky {skyfile} '
+            cmd += '--fiberflat {fiberflatfile} --calib {calibfile} '
+            cmd += '--cosmics-nsig 6 --outfile {outframefile} '
+            cmd = cmd.format(framefile=framefile, skyfile=skyfile,
+                             fiberflatfile=fiberflatfile, calibfile=calibfile,
+                             outframefile=outframefile)
+            #print(cmd)
+            os.system(cmd)
+
+def qaplots(night, verbose=False, overwrite=False):
+    """Make some QAplots.
+
+    cal is electrons/A  /  (ergs/s/cm2/A)
+    
+    ./plot_fluxcalib.py fluxcalib-*-00029181.fits \
+      /project/projectdirs/desi/datachallenge/reference_runs/19.9/spectro/redux/mini/exposures/20200411/00000041/calib-*4-00000041.fits
+
+    """
+    import astropy.units as u
+    from astropy import constants as const
+    import matplotlib.pyplot as plt
+
+    import desimodel.io
+    
+    #import sys
+    #import astropy.io.fits as pyfits
+    #import numpy as np
+    #import matplotlib.pyplot as plt
+    #from desimodel.io import load_throughput
+
+    desi = desimodel.io.load_desiparams()
+    area = (desi['area']['geometric_area'] * u.m**2).to(u.cm**2)
+
+    thru = dict()
+    for camera in ('b', 'r' , 'z'):
+        #thru[camera] = desimodel.io.load_throughput(camera)
+        import specter.throughput
+        thrufile = '/global/u2/i/ioannis/repos/desihub/desimodel/data/throughput/thru-{}.fits'.format(camera)
+        thru[camera] = specter.throughput.load_throughput(thrufile)
+ 
+    allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+    for expiddir in allexpiddir:
+        expid = os.path.basename(expiddir)
+
+        for spectro in np.arange(10):
+            calibfile = glob(os.path.join(expiddir, 'fluxcalib-r{}-{}.fits'.format(spectro, expid)))
+            if len(calibfile) > 0:
+                fig, ax = plt.subplots()
+                for camera in ('g', 'r' , 'z'):
+                    calibfile = glob(os.path.join(expiddir, 'fluxcalib-{}{}-{}.fits'.format(camera, spectro, expid)))
+                    info = fitsio.FITS(calibfile)
+                    hdr = info['FLUXCALIB'].read_header()
+                    exptime = hdr['EXPTIME'] * u.s
+
+                    wave = info['WAVELENGTH'].read() * u.angstrom
+                    specthru = info['FLUXCALIB'].read() * 1e17 * (u.electron / u.angstrom) / (u.erg / u.s / u.cm / u.cm / u.angstrom)
+                    specthru *= const.h.to(u.erg * u.s) * const.c.to(u.angstrom / u.s) / exptime / area / wave # [electron/photon]
+
+                    ax.plot(wave.value, specthru.value, label=camera)
+                    #ax.plot(wave.value, thru[camera](wave.value))
+
+                ax.legend()
+                fig.savefig('junk.png')
+                pdb.set_trace()
+                
+
+    plt.figure()
+    p=plt.subplot(1,1,1)
+    p.set_title("EXPID #29181 FIBER #307 !PRELIMINARY!")
+
+    for i,filename in enumerate(sys.argv[1:]) :
+        h=pyfits.open(filename)
+        wave=h["WAVELENGTH"].data
+        cal=h["FLUXCALIB"].data[100] # electrons/A  /  (1e-17  ergs/s/cm2/A)
+        cal *= 1e17 # electrons/A  /  ( ergs/s/cm2/A)
+        exptime=h[0].header["EXPTIME"]
+        cal /= exptime # electrons  /  (ergs/cm2)
+
+        # reference effective collection area
+        area = 8.678709421*1e4 # cm2
+        cal /= area # electrons  /  ergs
+        hplanck = 6.62606957e-34 #J.s
+        hplanck *= 1e7 # erg.s
+        cspeed = 2.99792458e8 # m/s
+        cspeed *= 1e10 # A/s
+        energy = hplanck*cspeed/wave # erg ( erg.s * A/s / A)
+        cal *= energy # electrons /photons
+
+        cam=h[0].header["CAMERA"][0]
+
+        if i<3 :
+            label=None
+            if i==0 : label="data"
+            plt.plot(wave,cal,label=label)
+        else :
+            label=None
+            if i==3 : label="sim"
+            plt.plot(wave,cal,":",c="gray",label=label,alpha=0.6)
+
+    plt.grid()   
+    plt.xlabel("wavelength (A)")
+    plt.ylabel("throughput (electron / photon) ")
+    plt.legend(title="CCD electrons per photon (above atmosphere that could hit the primary mirror)",loc="upper left")
+    plt.show()
 
 def main():
 
@@ -184,7 +418,10 @@ def main():
     parser.add_argument('--gather-qa', action='store_true', help='Gather and stack nightwatch QA files.')
     parser.add_argument('--update-fibermaps', action='store_true', help='Update fibermap files')
     parser.add_argument('--fit-stdstars', action='store_true', help='Fit the standard stars.')
-
+    parser.add_argument('--fluxcalib', action='store_true', help='Do the flux-calibration.')
+    parser.add_argument('--process-exposures', action='store_true', help='Process all exposures.')
+    parser.add_argument('--qaplots', action='store_true', help='Make some plots.')
+    parser.add_argument('--redrock', action='store_true', help='Do redshift fitting.')
     parser.add_argument('--verbose', action='store_true', help='Be verbose.')
     parser.add_argument('--overwrite', action='store_true', help='Overwrite existing files.')
     args = parser.parse_args()
@@ -198,48 +435,20 @@ def main():
 
     # Fit the standard stars.
     if args.fit_stdstars:
-        from desispec.calibfinder import findcalibfile, CalibFinder
+        fit_stdstars(args.night, verbose=args.verbose, overwrite=args.overwrite)
 
-        night, overwrite = args.night, args.overwrite
-        starmodelfile = os.path.join(os.getenv('DESI_BASIS_TEMPLATES'), 'stdstar_templates_v2.2.fits')
-                
-        allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
-        for expiddir in allexpiddir:
-            expid = os.path.basename(expiddir)
-            # Process each spectrograph separately.
-            for spectro in range(9):
-                outstdfile = os.path.join(outdir, 'stdstars-{}-{}.fits'.format(str(spectro), expid))
-                if os.path.isfile(outstdfile) and not overwrite:
-                    print('File exists {}'.format(outstdfile))
-                    continue
-                    
-                framefiles = sorted(glob(os.path.join(expiddir, 'frame-[brz]{}-{}.fits'.format(str(spectro), expid))))
-                # Gather the calibration files.
-                if len(framefiles) == 3:
-                    skymodelfiles = [framefile.replace(outdir, reduxdir).replace('frame-', 'sky-') for framefile in framefiles]
-                    fiberflatfiles = []
-                    for framefile in framefiles:
-                        hdr = fitsio.read_header(framefile)
-                        calib = CalibFinder([hdr])
-                        fiberflatfiles.append(os.path.join(os.getenv('DESI_SPECTRO_CALIB'), calib.data['FIBERFLAT']))
+    if args.fluxcalib:
+        fluxcalib(args.night, verbose=args.verbose, overwrite=args.overwrite)
 
-                    cmd = 'desi_fit_stdstars --frames {framefiles} --skymodels {skymodelfiles} --fiberflats {fiberflatfiles} '
-                    cmd += '--starmodels {starmodelfile} --outfile {outstdfile}'
-                    cmd = cmd.format(framefiles=' '.join(framefiles),
-                                     skymodelfiles=' '.join(skymodelfiles),
-                                     fiberflatfiles=' '.join(fiberflatfiles),
-                                     starmodelfile=starmodelfile,
-                                     outstdfile=outstdfile)
-                    print(cmd)
-                    os.system(cmd)
-        pdb.set_trace()
+    if args.process_exposures:
+        process_exposures(args.night, verbose=args.verbose, overwrite=args.overwrite)
 
-#desi_fit_stdstars --frames 00028833/frame-*.fits --skymodels 00028833/sky-*.fits --fiberflats $DESI_SPECTRO_CALIB/spec/sp3/fiberflat-sm4-*-20191108.fits --starmodels $DESI_BASIS_TEMPLATES/stdstar_templates_v2.2.fits --outfile stdstars-3-00028833.fits
-#desi_compute_fluxcalibration  --infile 00028833/frame-b3-*.fits --sky 00028833/sky-b3-*.fits --fiberflat $DESI_SPECTRO_CALIB/spec/sp3/fiberflat-sm4-b-20191108.fits --models stdstars-3-00028833.fits --outfile fluxcalib-b3-00028833.fits --delta-color-cut 12
-#
-#./plot_fluxcalib.py fluxcalib-*-00029181.fits /project/projectdirs/desi/datachallenge/reference_runs/19.9/spectro/redux/mini/exposures/20200411\
-#/00000041/calib-*4-00000041.fits                                                                                                                
-
+    if args.redrock:
+        pass
+        #process_exposures(args.night, verbose=args.verbose, overwrite=args.overwrite)
+        
+    if args.qaplots:
+        qaplots(args.night, verbose=args.verbose, overwrite=args.overwrite)
 
 if __name__ == '__main__':
     main()
