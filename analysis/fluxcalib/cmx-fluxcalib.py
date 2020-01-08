@@ -156,7 +156,7 @@ def update_frame_fibermaps(data, fiberassignmap, verbose=False, overwrite=False)
         strexpid = '{:08d}'.format(expid)
         framefiles = glob(os.path.join(reduxdir, str(night), strexpid, 'frame-[brz][0-9]-{}.fits'.format(strexpid)))
         for framefile in framefiles:
-            outframefile = os.path.join(outdir, str(night), strexpid, os.path.basename(framefile))
+            outframefile = os.path.join(outdir, 'exposures', str(night), strexpid, os.path.basename(framefile))
             if os.path.isfile(outframefile) and not overwrite:
                 print('File exists {}'.format(outframefile))
                 continue
@@ -197,7 +197,7 @@ def fit_stdstars(night, verbose=False, overwrite=False):
     """
     starmodelfile = os.path.join(os.getenv('DESI_BASIS_TEMPLATES'), 'stdstar_templates_v2.2.fits')
 
-    allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+    allexpiddir = glob(os.path.join(outdir, 'exposures', str(night), '????????'))
     for expiddir in allexpiddir:
         expid = os.path.basename(expiddir)
         # Process each spectrograph separately.
@@ -234,7 +234,7 @@ def fluxcalib(night, verbose=False, overwrite=False):
       --outfile fluxcalib-b3-00028833.fits --delta-color-cut 12
 
     """
-    allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+    allexpiddir = glob(os.path.join(outdir, 'exposures', str(night), '????????'))
     for expiddir in allexpiddir:
         expid = os.path.basename(expiddir)
         
@@ -288,7 +288,7 @@ def process_exposures(night, verbose=False, overwrite=False):
                             apply a throughput correction when subtraction the sky
 
     """
-    allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+    allexpiddir = glob(os.path.join(outdir, 'exposures', str(night), '????????'))
     for expiddir in allexpiddir:
         expid = os.path.basename(expiddir)
 
@@ -329,87 +329,64 @@ def qaplots(night, verbose=False, overwrite=False):
 
     import desimodel.io
     
-    #import sys
-    #import astropy.io.fits as pyfits
-    #import numpy as np
-    #import matplotlib.pyplot as plt
-    #from desimodel.io import load_throughput
+    pngfile = os.path.join(outdir, 'qa-throughtput-{}.png'.format(str(night)))
+    if os.path.isfile(pngfile) and not overwrite:
+        print('File exists {}'.format(pngfile))
+        return
 
     desi = desimodel.io.load_desiparams()
     area = (desi['area']['geometric_area'] * u.m**2).to(u.cm**2)
 
     thru = dict()
     for camera in ('b', 'r' , 'z'):
-        #thru[camera] = desimodel.io.load_throughput(camera)
-        import specter.throughput
-        thrufile = '/global/u2/i/ioannis/repos/desihub/desimodel/data/throughput/thru-{}.fits'.format(camera)
-        thru[camera] = specter.throughput.load_throughput(thrufile)
- 
-    allexpiddir = glob(os.path.join(outdir, str(night), '????????'))
+        thru[camera] = desimodel.io.load_throughput(camera)
+        #import specter.throughput
+        #thrufile = '/global/u2/i/ioannis/repos/desihub/desimodel/data/throughput/thru-{}.fits'.format(camera)
+        #thru[camera] = specter.throughput.load_throughput(thrufile)
+
+    fig, ax = plt.subplots()
+    
+    allexpiddir = glob(os.path.join(outdir, 'exposures', str(night), '????????'))
     for expiddir in allexpiddir:
         expid = os.path.basename(expiddir)
 
         for spectro in np.arange(10):
             calibfile = glob(os.path.join(expiddir, 'fluxcalib-r{}-{}.fits'.format(spectro, expid)))
             if len(calibfile) > 0:
-                fig, ax = plt.subplots()
-                for camera in ('g', 'r' , 'z'):
-                    calibfile = glob(os.path.join(expiddir, 'fluxcalib-{}{}-{}.fits'.format(camera, spectro, expid)))
+                for camera in ('b', 'r' , 'z'):
+                    cframefile = os.path.join(expiddir, 'cframe-{}{}-{}.fits'.format(camera, spectro, expid))
+                    calibfile = os.path.join(expiddir, 'fluxcalib-{}{}-{}.fits'.format(camera, spectro, expid))
+
                     info = fitsio.FITS(calibfile)
                     hdr = info['FLUXCALIB'].read_header()
                     exptime = hdr['EXPTIME'] * u.s
 
                     wave = info['WAVELENGTH'].read() * u.angstrom
-                    specthru = info['FLUXCALIB'].read() * 1e17 * (u.electron / u.angstrom) / (u.erg / u.s / u.cm / u.cm / u.angstrom)
+                    flux = info['FLUXCALIB'].read()
+                    ivar = info['IVAR'].read()
+                    
+                    specthru = flux * 1e17 * (u.electron / u.angstrom) / (u.erg / u.s / u.cm / u.cm / u.angstrom)
                     specthru *= const.h.to(u.erg * u.s) * const.c.to(u.angstrom / u.s) / exptime / area / wave # [electron/photon]
 
-                    ax.plot(wave.value, specthru.value, label=camera)
-                    #ax.plot(wave.value, thru[camera](wave.value))
+                    # Plot just the standards--
+                    fibermap = desispec.io.read_fibermap(cframefile)
+                    istd = np.where(isStdStar(fibermap))[0]
 
-                ax.legend()
-                fig.savefig('junk.png')
-                pdb.set_trace()
-                
+                    for ii in istd:
+                        label = '{}-{}-{}'.format(int(expid), str(spectro), fibermap['FIBER'][ii])
+                        ax.plot(wave.value, specthru[ii, :].value, label=label)
+     
+    for camera in ('b', 'r' , 'z'):
+        ax.plot(wave.value, thru[camera].thru(wave.value), color='grey')
+                    
+    ax.set_xlabel(r'Wavelength ($\AA$)')
+    ax.set_ylabel('Throughput (electron / photon)')
+    ax.set_ylim(0, 1)
+    ax.legend()
 
-    plt.figure()
-    p=plt.subplot(1,1,1)
-    p.set_title("EXPID #29181 FIBER #307 !PRELIMINARY!")
-
-    for i,filename in enumerate(sys.argv[1:]) :
-        h=pyfits.open(filename)
-        wave=h["WAVELENGTH"].data
-        cal=h["FLUXCALIB"].data[100] # electrons/A  /  (1e-17  ergs/s/cm2/A)
-        cal *= 1e17 # electrons/A  /  ( ergs/s/cm2/A)
-        exptime=h[0].header["EXPTIME"]
-        cal /= exptime # electrons  /  (ergs/cm2)
-
-        # reference effective collection area
-        area = 8.678709421*1e4 # cm2
-        cal /= area # electrons  /  ergs
-        hplanck = 6.62606957e-34 #J.s
-        hplanck *= 1e7 # erg.s
-        cspeed = 2.99792458e8 # m/s
-        cspeed *= 1e10 # A/s
-        energy = hplanck*cspeed/wave # erg ( erg.s * A/s / A)
-        cal *= energy # electrons /photons
-
-        cam=h[0].header["CAMERA"][0]
-
-        if i<3 :
-            label=None
-            if i==0 : label="data"
-            plt.plot(wave,cal,label=label)
-        else :
-            label=None
-            if i==3 : label="sim"
-            plt.plot(wave,cal,":",c="gray",label=label,alpha=0.6)
-
-    plt.grid()   
-    plt.xlabel("wavelength (A)")
-    plt.ylabel("throughput (electron / photon) ")
-    plt.legend(title="CCD electrons per photon (above atmosphere that could hit the primary mirror)",loc="upper left")
-    plt.show()
-
+    print('Writing {}'.format(pngfile))
+    fig.savefig(pngfile)
+               
 def main():
 
     parser = argparse.ArgumentParser(description='Derive flux-calibrated spectra and estimate the throughput.')
@@ -420,17 +397,21 @@ def main():
     parser.add_argument('--fit-stdstars', action='store_true', help='Fit the standard stars.')
     parser.add_argument('--fluxcalib', action='store_true', help='Do the flux-calibration.')
     parser.add_argument('--process-exposures', action='store_true', help='Process all exposures.')
-    parser.add_argument('--qaplots', action='store_true', help='Make some plots.')
+    parser.add_argument('--group-spectra', action='store_true', help='Group the data into healpixels.')
     parser.add_argument('--redrock', action='store_true', help='Do redshift fitting.')
+
+    parser.add_argument('--qaplots', action='store_true', help='Make some plots.')
     parser.add_argument('--verbose', action='store_true', help='Be verbose.')
     parser.add_argument('--overwrite', action='store_true', help='Overwrite existing files.')
     args = parser.parse_args()
 
     # Gather QA files
-    data, fiberassignmap = gather_qa(args.night, verbose=args.verbose, overwrite=args.gather_qa)
+    if args.gather_qa:
+        data, fiberassignmap = gather_qa(args.night, verbose=args.verbose, overwrite=args.overwrite)
 
     # Update fibermap and frame files.
     if args.update_fibermaps:
+        data, fiberassignmap = gather_qa(args.night, verbose=args.verbose)
         update_frame_fibermaps(data, fiberassignmap, verbose=args.verbose, overwrite=args.overwrite)
 
     # Fit the standard stars.
@@ -443,9 +424,22 @@ def main():
     if args.process_exposures:
         process_exposures(args.night, verbose=args.verbose, overwrite=args.overwrite)
 
+    if args.group_spectra:
+        spectradir = os.path.join(outdir, 'spectra-64')
+        cmd = 'desi_group_spectra --reduxdir {outdir} --nights {night} --outdir {spectradir}'
+        cmd = cmd.format(outdir=outdir, night=str(args.night), spectradir=spectradir)
+        os.system(cmd)
+
     if args.redrock:
-        pass
-        #process_exposures(args.night, verbose=args.verbose, overwrite=args.overwrite)
+        spectrafiles = glob(os.path.join(outdir, 'spectra-64', 'spectra-64-*.fits'))
+        for spectrafile in spectrafiles:
+            zbestfile = os.path.join(outdir, 'spectra-64', os.path.basename(spectrafile).replace('spectra-', 'zbest-'))
+            redrockfile = os.path.join(outdir, 'spectra-64', os.path.basename(spectrafile).replace('spectra-', 'redrock-').replace('.fits', '.h5'))
+            cmd = 'rrdesi --output {redrockfile} --zbest {zbestfile} {spectrafiles} --mp 32'
+            cmd = cmd.format(redrockfile=redrockfile, zbestfile=zbestfile, spectrafiles=' '.join(spectrafiles))
+            os.system(cmd)
+            
+        pdb.set_trace()
         
     if args.qaplots:
         qaplots(args.night, verbose=args.verbose, overwrite=args.overwrite)
