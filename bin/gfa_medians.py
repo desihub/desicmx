@@ -20,9 +20,13 @@ def remove_overscan(image):
         _image[:, 1024:2048] = image[:, 1174:2198]
     return _image
 
-def image_area_median(image):
+def image_area_median(image, extname):
     im = remove_overscan(image)
-    median = np.median(im)
+
+    if extname.find('FOCUS') == -1:
+        median = np.median(im)
+    else:
+        median = np.median(np.concatenate([np.ravel(im[:, 0:900]), np.ravel(im[:, 1170:2048])]))
 
     if median == np.floor(median):
         median = int(median)
@@ -105,7 +109,7 @@ if __name__ == "__main__":
                 im = fits.getdata(fname, extname=extname)
             except:
                 continue
-            median = image_area_median(im)
+            median = image_area_median(im, extname)
             print(fname, extname, median)
             result.append((args.night[0], fname, _expid_from_fname(fname), extname, median))
         if i != (len(flist)-1):
