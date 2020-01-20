@@ -20,16 +20,8 @@ function usage() {
 }
 #
 # Load an approximation of the NERSC desiconda stack.
-# The stack at NERSC is probably quite old.
 #
-[[ -z "${DESI_SPECTRO_DATA}" ]] && source ./setup.sh
-#
-# Load desimeter and desicmx.
-#
-if [[ -z "${DESICMX}" ]]; then
-    module use ${HOME}/users/bweaver/modulefiles
-    module load desimeter desicmx
-fi
+[[ -z "${DESI_SPECTRO_DATA}" ]] && source ${HOME}/setup.sh
 #
 # Options.
 #
