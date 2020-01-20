@@ -977,10 +977,11 @@ def plot_one_exp(data, expid, usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
                                 np.clip(guess, 1, np.inf).reshape(-1, 1))
         snr = tdata['spectroflux']*np.sqrt(tdata['spectroflux_ivar'])
         good = ((snr[:, ind] > snrcut) & (relflux[:, ind] < 5) &
-                np.isfinite(relflux[:, ind]) & 
-                np.isfinite(tdata['delta_x_arcsec'][:, ind]))
+                np.isfinite(relflux[:, ind]))
         m = np.array([tpet in usepetals
                       for tpet in tdata['fiber'][:, ind] // 500])
+        m = m & np.isfinite(tdata['delta_x_arcsec'][:, ind])
+
         sz = 0.05+5*good
         p.scatter(tdata['xfocal'][~good & m, ind],
                   tdata['yfocal'][~good & m, ind],
@@ -1010,8 +1011,11 @@ def plot_one_exp(data, expid, usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
 
     
 def plot_sequence(sequence, fn, **kw):
-    import ditherdata
-    res = ditherdata.rearrange_table(sequence._exposure_table)
+    if hasattr(sequence, '_exposure_table'):
+        import ditherdata
+        res = ditherdata.rearrange_table(sequence._exposure_table)
+    else:
+        res = sequence
     exps = res['R']['expid'][0, :]
     from matplotlib.backends.backend_pdf import PdfPages
     pdf = PdfPages(fn)

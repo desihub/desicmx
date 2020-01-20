@@ -303,7 +303,8 @@ def fit_rotoff(fvcfn, coordfn, fafn, gfafn, verbose=True):
     if verbose:
         print(f'Telescope needs correction by:'
               f'\nx:{xtel:+6.2f}"\ny:{ytel:+6.2f}"\n'
-              f'(scale:{scale:+9.5f})\nrotation:{rot:+7.3f} deg')
+              f'(scale:{scale:+9.5f})\n'
+              f'rotation:{rot:+7.3f} deg ({rot*60*60:+7.1f} arcsec)')
     return ((xgfatanfa, ygfatanfa), (xgfatanmeas, ygfatanmeas),
             (xmod, ymod), res)
 
