@@ -7,7 +7,8 @@ function usage() {
     (
         echo "${execName} [-c] [-h] TILE NIGHT FVC GFA"
         echo ""
-        echo "Run fit_rotoff.py."
+        echo "Wrapper script for running fit_rotoff.py."
+        echo "Currently this script is intended for KPNO, not NERSC."
         echo ""
         echo "    -c = GFA exposure is a data cube (guide file)."
         echo "    -h = Print this message and exit."
