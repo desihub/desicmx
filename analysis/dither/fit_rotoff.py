@@ -139,7 +139,7 @@ def read_gfa(fn=None, detailed=True):
         uvcen = np.mean(uv, axis=0)
         lcen, bcen = uv2lb(uvcen.reshape(1, -1))
         lcen, bcen = lcen[0], bcen[0]
-        mjd = fits.getdata(fn.replace('_reduced-', '_ccds-'))['mjd'][0]
+        mjd = fits.getdata(fn.replace('_reduced', '_ccds'))['mjd'][0]
         lst = mjd2lst(mjd, -111.599208)*360/24.
         from desimeter.transform.radec2tan import radec2tan
         xx, yy = radec2tan(out['RA'], out['DEC'], lcen, bcen, mjd, lst, 0,
@@ -208,7 +208,7 @@ def do_fits(gfa_to_use=None):
     # should be three matched sets of identical GFAs in different frames.
     xi = np.array([ideal['X'], ideal['Y']]).T
     xf = np.array([fp['X_FP'], fp['Y_FP']]).T
-    xg = np.array([gfa['X'], gfa['Y']]).T 
+    xg = np.array([gfa['X'], gfa['Y']]).T
 
     def chi(param, x1, x2):
         return (x1-transform(param, x2)).reshape(-1)
@@ -225,7 +225,7 @@ def do_fits(gfa_to_use=None):
         results.append([res[0], data, model])
         print(np.sqrt(np.sum((model-data)**2)/3))
     return results
-    
+
 
 # ra dec -> tangent plane
 # fit FP <-> radec
@@ -306,9 +306,9 @@ def fit_rotoff(fvcfn, coordfn, fafn, gfafn, verbose=True):
               f'(scale:{scale:+9.5f})\nrotation:{rot:+7.3f} deg')
     return ((xgfatanfa, ygfatanfa), (xgfatanmeas, ygfatanmeas),
             (xmod, ymod), res)
-    
-    
-    
+
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Find rotation & offset from observation')
