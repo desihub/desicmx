@@ -43,7 +43,72 @@ done
 done
 )
 
+# Fitting 20200114 data
+
+  * 00040022: Zenith
+  * 00040024: 30 degree elevation
+
+cd /global/project/projectdirs/desi/cmx/fpcalib/posarc/20200114
+
+(
+for e in 40022 40024 ; do
+for i in `seq 0 11` ; do
+    echo $e $i
+    ifile=/global/project/projectdirs/desi/engineering/focalplane/logs/kpno/20200114/000$e/fvc-000$e.fits.fz
+    ofile=`echo $e $i | awk '{printf("fvc-%08d-%04d.csv",$1,$2)}'`
+    extname=`echo $i | awk '{printf("F%04d",$1)}'`
+    if [ ! -f $ofile ] ; then
+       cmd="desi_fvc_proc -i $ifile --extname $extname -o $ofile"
+       echo $cmd
+       $cmd
+    fi
+done
+done
+)
+
+
 # fitting circles and petal offsets
+
+## 20200114 zenith & elevation 30
+
+basedir=/global/project/projectdirs/desi/cmx/fpcalib/posarc
+
+./fit_circles.py -i $basedir/20200114/fvc-00040022-*.csv \
+    -o $basedir/20200114/fvc-theta-axis-00040022.csv
+./fit_circles.py -i $basedir/20200114/fvc-00040024-*.csv \
+    -o $basedir/20200114/fvc-theta-axis-00040024.csv
+
+./fit_petal.py  $basedir/20200114/fvc-theta-axis-*.csv
+
+/global/project/projectdirs/desi/cmx/fpcalib/posarc/20200114/fvc-theta-axis-00040022.csv
+--------------------------
+petal 0 dx=  47 +- 1.0 dy= -37 +- 1.2 rmsx=  22 rmsy=  25
+petal 1 dx=  11 +- 1.4 dy=   8 +- 1.0 rmsx=  28 rmsy=  21
+petal 2 dx=  33 +- 1.5 dy=  18 +- 1.3 rmsx=  30 rmsy=  28
+petal 3 dx=  28 +- 1.2 dy=  13 +- 1.1 rmsx=  23 rmsy=  22
+petal 4 dx=  -2 +- 1.2 dy=  28 +- 1.6 rmsx=  26 rmsy=  34
+petal 5 dx=  -4 +- 1.6 dy=  27 +- 1.4 rmsx=  35 rmsy=  29
+petal 6 dx= -39 +- 1.8 dy= -14 +- 1.4 rmsx=  39 rmsy=  29
+petal 7 dx= -40 +- 1.7 dy=   1 +- 1.6 rmsx=  35 rmsy=  33
+petal 8 dx= -20 +- 1.5 dy= -18 +- 1.7 rmsx=  28 rmsy=  31
+petal 9 dx=   4 +- 1.3 dy= -31 +- 1.8 rmsx=  28 rmsy=  39
+
+/global/project/projectdirs/desi/cmx/fpcalib/posarc/20200114/fvc-theta-axis-00040024.csv
+petal 0 dx=  49 +- 1.0 dy= -36 +- 1.2 rmsx=  22 rmsy=  25
+petal 1 dx=   9 +- 1.3 dy=  10 +- 1.0 rmsx=  28 rmsy=  21
+petal 2 dx=  30 +- 1.5 dy=  19 +- 1.4 rmsx=  30 rmsy=  28
+petal 3 dx=  25 +- 1.2 dy=  15 +- 1.1 rmsx=  23 rmsy=  22
+petal 4 dx=  -6 +- 1.2 dy=  32 +- 1.6 rmsx=  25 rmsy=  33
+petal 5 dx=  -6 +- 1.7 dy=  35 +- 1.4 rmsx=  35 rmsy=  29
+petal 6 dx= -37 +- 1.9 dy=  -5 +- 1.4 rmsx=  40 rmsy=  29
+petal 7 dx= -40 +- 1.7 dy=   6 +- 1.7 rmsx=  35 rmsy=  34
+petal 8 dx= -19 +- 1.5 dy= -16 +- 1.6 rmsx=  28 rmsy=  31
+petal 9 dx=   6 +- 1.3 dy= -31 +- 1.8 rmsx=  28 rmsy=  39
+
+./fit_petal.py $basedir/20200111/fvc-theta-axis-00039565.csv $basedir/20200111/fvc-theta-axis-00039569.csv
+
+
+## 20200109 and 20200111
 
 basedir=/global/project/projectdirs/desi/cmx/fpcalib/posarc
 ./fit_circles.py -i $basedir/20200109/fvc-00039228-00{00,01,02,03,04,05,06,07,08,09,10,11}.csv -o $basedir/20200109/fvc-theta-axis-00039228.csv
@@ -61,6 +126,7 @@ basedir=/global/project/projectdirs/desi/cmx/fpcalib/posarc
 
 ./fit_petal.py $basedir/20200109/fvc-theta-axis-00039228.csv $basedir/20200111/fvc-theta-axis-00039569.csv
 ./fit_petal.py $basedir/20200109/fvc-theta-axis-00039230.csv $basedir/20200111/fvc-theta-axis-00039567.csv
+./fit_petal.py $basedir/20200111/fvc-theta-axis-00039565.csv $basedir/20200111/fvc-theta-axis-00039569.csv
 
 #-------------------------------------------------------------------------
 #- Subsets of 6
