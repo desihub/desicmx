@@ -81,6 +81,7 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
                         'correct_for_adc'  : False,
                         'usetemp'          : False,
                         'uselut'           : False,
+                        'resetrot'         : False,
                         'exptime'          : 60.0,
                         'passthru'         : passthru,
                         'program'          : 'Dither tile_id {:05d} ({:g} {:g})'.format(tile_id, ra.to('arcsec').value, dec.to('arcsec').value)
