@@ -64,6 +64,8 @@ for filename in filenames :
         a=plt.subplot(1,1,1)
         a.set_title(title)
         a.quiver(xx,yy,dx,dy, scale=1/2000, scale_units='xy')
+        a.quiver([-410,],[410],[0.020,],[0,], scale=1/2000, scale_units='xy', width=0.002)
+        a.text(-410, 420, '20 microns')
         a.set_xlabel("DX_FP (mm)")
         a.set_ylabel("DX_FP (mm)")
 
