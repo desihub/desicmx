@@ -32,6 +32,8 @@ parser.add_argument('-d', '--tiledec', required=True, type=float,
                     help='Central Dec of the tile [deg]')
 parser.add_argument('-p' '--pattern', dest='pattern', default='3x3',
                     help='Raster pattern [3x3, 5x5]')
+parser.add_argument('--plot', dest='plot', action='store_true', default=False,
+                    help='Plot the dither pattern, for debugging.')
 parser.add_argument('--deltara', default=0, type=float,
                     help='Ra offset of center of raster from current position')
 parser.add_argument('--deltadec', default=0, type=float,
@@ -70,11 +72,40 @@ else:
     raise SystemExit('Invalid raster pattern {}'.format(args.pattern))
 
 
-dith_script = []    # Single interleaved guider+spectrograph script.
+# Set up plots for debugging if requested.
+make_plot = args.plot
+if make_plot:
+    try:
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
+
+        n = len(stepx)
+        colors = mpl.cm.coolwarm(np.linspace(0,1,n))
+        mpl.rcParams['axes.prop_cycle'] = plt.cycler('color', colors)
+
+        fig, ax = plt.subplots(1,1, figsize=(6,5), tight_layout=True)
+        locs = {}
+    except ImportError as e:
+        print(e)
+        print('Sorry, no plots for you.')
+        make_plot = False
+
+
+# Generate single interleaved guider+spectrograph script.
+dith_script = []
 
 for j, (dx, dy) in enumerate(zip(stepx, stepy)):
     ra = ra + dx
     dec = dec + dy
+
+    if make_plot:
+        loc = '{:g} {:g}'.format(ra.value, dec.value)
+        print(loc)
+        if loc in locs:
+            locs[loc] = '{}, {}'.format(locs[loc], j+1)
+        else:
+            locs[loc] = '{:d}'.format(j+1)
+        ax.plot(ra, dec, 'o')
 
     passthru = '{{ OFFSTRA:{:g}, OFFSTDEC:{:g}, TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format((ra-RA).to('arcsec').value, (dec-DEC).to('arcsec').value, tile_id, tile_ra, tile_dec)
 
@@ -113,8 +144,25 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
 #                        'action'           : 'stop_guiding'
 #                        })
 
+if make_plot:
+    # Add labels for each point.
+    xmin, xmax = 1e99, -1e99
+    for k, v in locs.items():
+        print(k, v)
+        x, y = [float(_) for _ in k.split()]
+        xmin, xmax = np.minimum(x, xmin), np.maximum(x, xmax)
+        ax.text(x, y, v)
+
+    ax.set(aspect='equal',
+           xlim=(1.1*xmax, 1.1*xmin),
+           xlabel=r'$\Delta\alpha$ [arcsec]',
+           ylabel=r'$\Delta\delta$ [arcsec]')
+
+    plt.show()
+
 # Dump JSON guider + spectrograph script into one file.
 dith_filename = 'dithseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}_{}.json'.format(tile_id, step.value, args.deltara, args.deltadec, args.pattern)
 
 json.dump(dith_script, open(dith_filename, 'w'), indent=4)
 print('Use {} in the DESI observer console.'.format(dith_filename))
+
