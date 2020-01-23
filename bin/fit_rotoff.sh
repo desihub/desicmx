@@ -96,7 +96,7 @@ while [[ ! -f ${fvc_data} ]]; do
     echo "Waiting for fvc data: ${fvc_data} ..."
     sleep 5
 done
-[[ -f ${csv} ]] || desi_fvc_proc -i ${fvc_data} --exp ${coordinates} -o ${csv}
+[[ -f ${csv} ]] || desi_fvc_proc -i ${fvc_data} --exp ${coordinates} -o ${csv} --extname last
 #
 # Main command.
 #
@@ -108,4 +108,5 @@ python ${DESICMX}/analysis/dither/fit_rotoff.py \
     -d ${csv} \
     -c ${coordinates} \
     -g ${reduced} \
-    -f ${fiberassign}
+    -f ${fiberassign} \
+    -a -50

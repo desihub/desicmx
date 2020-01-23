@@ -24,6 +24,22 @@ def lb2tan(l, b, lcen=None, bcen=None):
     return xx, yy
 
 
+def tan2lb(xx, yy, lcen, bcen):
+    uvcen = lb2uv(lcen, bcen)
+    up = np.array([0, 0, 1])
+    rahat = np.cross(up, uvcen)
+    rahat /= np.sqrt(np.sum(rahat**2))
+    dechat = np.cross(uvcen, rahat)
+    dechat /= np.sqrt(np.sum(dechat**2))
+    xcoord = xx*np.pi/180
+    ycoord = yy*np.pi/180
+    zcoord = np.sqrt(1-xcoord**2-ycoord**2)
+    uv = (xcoord.reshape(-1, 1)*rahat.reshape(1, -1) +
+          ycoord.reshape(-1, 1)*dechat.reshape(1, -1) +
+          zcoord.reshape(-1, 1)*uvcen.reshape(1, -1))
+    return uv2lb(uv)
+
+
 def lb2tp(l, b):
     return (90.-b)*np.pi/180., l*np.pi/180.
 
@@ -108,7 +124,7 @@ def read_idealfp():
     return res
 
 
-def read_gfa(fn=None, detailed=True):
+def read_gfa(fn=None, detailed=True, adjustby=0):
     guiders = ['GUIDE%d' % i for i in [0, 2, 3, 5, 7, 8]]
     from astropy.wcs import WCS
     out = np.zeros(len(guiders), dtype=[('RA', 'f8'), ('DEC', 'f8'),
@@ -125,7 +141,7 @@ def read_gfa(fn=None, detailed=True):
         h = fits.getheader(fn, guider)
         wcs = WCS(h)
         out['GFA_LOC'][i] = int(guider[-1])
-        r, d = wcs.all_pix2world(1, 1, 1)
+        r, d = wcs.all_pix2world(1+adjustby, 1, 1)
         out['RA'][i] = r
         out['DEC'][i] = d
     if average or not detailed:
@@ -227,16 +243,37 @@ def do_fits(gfa_to_use=None):
     return results
 
 
-# ra dec -> tangent plane
-# fit FP <-> radec
-# predict radec for GFA
-# fit GFA predicted radec to measured radec
+def evaluate_fit(xfp, yfp, px, py, degree=5):
+    from desimeter.transform.fvc2fp.poly2d import _vander2d
+    A = _vander2d(xfp, yfp, degree).T
+    return A.dot(px), A.dot(py)
 
 
-def fit_rotoff(fvcfn, coordfn, fafn, gfafn, verbose=True):
+def fit_fp_tan(xfp, yfp, xtan, ytan, degree=5, verbose=False):
+    from desimeter.transform.fvc2fp.poly2d import _polyfit2d
+    from astropy.stats import mad_std
+    keep = np.ones(len(xfp), dtype='bool')
+    degree = 5
+    for i in range(3):
+        px, py = _polyfit2d(xfp[keep], yfp[keep],
+                            xtan[keep], ytan[keep], degree=degree)
+        fitx, fity = evaluate_fit(xfp, yfp, px, py)
+        xmed = np.median((fitx-xtan)[keep])
+        ymed = np.median((fity-ytan)[keep])
+        xstd = mad_std((fitx-xtan)[keep])
+        ystd = mad_std((fity-ytan)[keep])
+        keep = (keep & (np.abs(fitx - xtan - xmed) < 10*xstd) &
+                (np.abs(fity - ytan - ymed) < 10*ystd))
+    if verbose:
+        print('FVC -> radec accuracy: %5.2f %5.2f arcsec' %
+              (xstd*60*60, ystd*60*60))
+    return px, py
+
+
+def fit_rotoff(fvcfn, coordfn, fafn, gfafn, verbose=True, adjustby=0):
     fa, fahdr = fits.getdata(fafn, 'FIBERASSIGN', header=True)
-    gfa = read_gfa(gfafn)
-    fvc = ascii.read(fvcfn)
+    gfa = read_gfa(gfafn, adjustby=adjustby)
+    fvca = ascii.read(fvcfn)
     coord = fits.getdata(coordfn)
     fp = read_fp()
     lcen, bcen = fahdr['TILERA'], fahdr['TILEDEC']
@@ -245,32 +282,15 @@ def fit_rotoff(fvcfn, coordfn, fafn, gfafn, verbose=True):
     # I'm looking at.
     coord = coord[m]
     coordloc = 1000*coord['PETAL_LOC']+coord['DEVICE_LOC']
-    mc, mf = match(coordloc, fvc['LOCATION'])
-    fvc = fvc[mf]
+    mc, mf = match(coordloc, fvca['LOCATION'])
+    fvc = fvca[mf]
     # fibers with FLAGS_FVC_0 != 4 are gone.
     mfa, mfvc = match(fa['LOCATION'], fvc['LOCATION'])
     xx, yy = lb2tan(fa['TARGET_RA'], fa['TARGET_DEC'],
                     lcen=lcen, bcen=bcen)
-    from desimeter.transform.fvc2fp.poly2d import _polyfit2d, _vander2d
-    from astropy.stats import mad_std
-    keep = np.ones(len(mfvc), dtype='bool')
     degree = 5
-    for i in range(3):
-        px, py = _polyfit2d(fvc['X_FP'][mfvc[keep]], fvc['Y_FP'][mfvc[keep]],
-                            xx[mfa[keep]], yy[mfa[keep]], degree=degree)
-        A = _vander2d(fvc['X_FP'][mfvc], fvc['Y_FP'][mfvc],
-                      degree).T
-        fitx = A.dot(px)
-        fity = A.dot(py)
-        xmed = np.median((fitx-xx[mfa])[keep])
-        ymed = np.median((fity-yy[mfa])[keep])
-        xstd = mad_std((fitx-xx[mfa])[keep])
-        ystd = mad_std((fity-yy[mfa])[keep])
-        keep = (keep & (np.abs(fitx - xx[mfa] - xmed) < 10*xstd) &
-                (np.abs(fity - yy[mfa] - ymed) < 10*ystd))
-    if verbose:
-        print('FVC -> radec accuracy: %5.2f %5.2f arcsec' %
-              (xstd*60*60, ystd*60*60))
+    px, py = fit_fp_tan(fvc['X_FP'][mfvc], fvc['Y_FP'][mfvc],
+                        xx[mfa], yy[mfa], degree=degree, verbose=True)
     # now we have FP -> tan (-> radec)
     # now we want GFA positions
     m = (fp['DEVICE_TYPE'] == 'GFA') & (fp['PINHOLE_ID'] == 1)
@@ -282,9 +302,8 @@ def fit_rotoff(fvcfn, coordfn, fafn, gfafn, verbose=True):
     fpgfa = fpgfa[np.argsort(fpgfa['PETAL_LOC'])]
     gfa = gfa[np.array([x in usegfas for x in gfa['GFA_LOC']])]
     gfa = gfa[np.argsort(gfa['GFA_LOC'])]
-    A = _vander2d(fpgfa['X_FP'], fpgfa['Y_FP'], degree).T
-    xgfatanfa = A.dot(px)
-    ygfatanfa = A.dot(py)
+    xgfatanfa, ygfatanfa = evaluate_fit(fpgfa['X_FP'], fpgfa['Y_FP'],
+                                        px, py, degree)
     # these are the predicted locations of the GFAs in the tangent
     # plane
     xgfatanmeas, ygfatanmeas = lb2tan(gfa['RA'], gfa['DEC'],
@@ -301,12 +320,31 @@ def fit_rotoff(fvcfn, coordfn, fafn, gfafn, verbose=True):
     xtel = xtel*60*60
     ytel = ytel*60*60
     if verbose:
-        print(f'Telescope needs correction by:'
-              f'\nx:{xtel:+6.2f}"\ny:{ytel:+6.2f}"\n'
+        print(f'Telescope needs correction by:\n'
+              f'x:{xtel:+6.2f}"\ny:{ytel:+6.2f}"\n'
               f'(scale:{scale:+9.5f})\n'
               f'rotation:{rot:+7.3f} deg ({rot*60*60:+7.1f} arcsec)')
+
+    # also interesting: where were the fibers in the given exposure?
+    # this is just the inverse of the function we calculated.
+    # but I don't want to think about the order of operations, so just
+    # refit.
+    resinv = fit_points(xgfatanmeas, ygfatanmeas, xgfatanfa, ygfatanfa)
+    xtana, ytana = evaluate_fit(fvca['X_FP'], fvca['Y_FP'], px, py,
+                                degree)
+    # rotate fiberassign coordinates onto the observed sky coordinates
+    predicta = transform(resinv[0], np.array([xtana, ytana]).T)
+    rra, dda = tan2lb(predicta[:, 0], predicta[:, 1], lcen=lcen, bcen=bcen)
+    mfa, mfvca = match(fa['LOCATION'], fvca['LOCATION'])
+    out = np.zeros(len(fa), dtype=[('ra', 'f8'), ('dec', 'f8'), ('fiber', 'i4')])
+    out['ra'] = np.nan
+    out['dec'] = np.nan
+    out['ra'][mfa] = rra[mfvca]
+    out['dec'][mfa] = dda[mfvca]
+    out['fiber'] = -1
+    out['fiber'][mfa] = fa['fiber'][mfa]
     return ((xgfatanfa, ygfatanfa), (xgfatanmeas, ygfatanmeas),
-            (xmod, ymod), res)
+            (xmod, ymod), out, res)
 
 
 
@@ -325,7 +363,9 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--desimeterfvcfn', type=str, default=None,
                         required=True,
                         help='path to desimeter fvc analysis')
+    parser.add_argument('-a', '--adjustby', type=int, default=0,
+                        help='move pixel (1, 1) in x by this amount')
     args = parser.parse_args()
 
     fit_rotoff(args.desimeterfvcfn, args.coordinatesfn, args.fafn, args.gfafn,
-               verbose=True)
+               adjustby=args.adjustby, verbose=True)
