@@ -56,6 +56,7 @@ tile_dec = args.tiledec
 if args.pattern == '3x3':
     stepx = np.asarray([ 0,  1, -1, -1,  0,  1,  1,  0, -1, -1,  1])*step
     stepy = np.asarray([ 0,  1,  0,  0, -1,  0,  0, -1,  0,  0,  1])*step
+
 # Extended raster: 5x5 with 3 visits to (0,0), 27 exposures in total.
 elif args.pattern == '5x5':
     # Inner 3x3:
@@ -91,7 +92,7 @@ if make_plot:
         make_plot = False
 
 
-# Generate single interleaved guider+spectrograph script.
+# Generate single interleaved guider+spectrograph script:
 dith_script = []
 
 for j, (dx, dy) in enumerate(zip(stepx, stepy)):
@@ -100,7 +101,6 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
 
     if make_plot:
         loc = '{:g} {:g}'.format(ra.value, dec.value)
-        print(loc)
         if loc in locs:
             locs[loc] = '{}, {}'.format(locs[loc], j+1)
         else:
@@ -140,25 +140,23 @@ for j, (dx, dy) in enumerate(zip(stepx, stepy)):
 
     # Break, then manually stop guiding before starting the next exposure.
     dith_script.append({'sequence'         : 'Break'})
-#    dith_script.append({'sequence'         : 'Guide',
-#                        'action'           : 'stop_guiding'
-#                        })
+
 
 if make_plot:
     # Add labels for each point.
     xmin, xmax = 1e99, -1e99
     for k, v in locs.items():
-        print(k, v)
         x, y = [float(_) for _ in k.split()]
         xmin, xmax = np.minimum(x, xmin), np.maximum(x, xmax)
         ax.text(x, y, v)
 
     ax.set(aspect='equal',
-           xlim=(1.1*xmax, 1.1*xmin),
+           title='Dither sequence: {}'.format(args.pattern),
            xlabel=r'$\Delta\alpha$ [arcsec]',
            ylabel=r'$\Delta\delta$ [arcsec]')
 
     plt.show()
+
 
 # Dump JSON guider + spectrograph script into one file.
 dith_filename = 'dithseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}_{}.json'.format(tile_id, step.value, args.deltara, args.deltadec, args.pattern)
