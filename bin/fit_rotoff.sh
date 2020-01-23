@@ -40,13 +40,13 @@ shift $((OPTIND-1))
 if [[ ${#1} < 6 ]]; then
     tile=$(printf %06d ${1})
 elif [[ ${#1} > 6 ]]; then
-    echo "ERROR: Invalid tile '${1}'!"
+    echo "ERROR: Invalid tile '${1}'!" >&2
     exit 1
 else
     tile=${1}
 fi
 if [[ ${#2} != 8 ]]; then
-    echo "ERROR: Invalid night '${2}'!"
+    echo "ERROR: Invalid night '${2}'!" >&2
     exit 1
 else
     night=${2}
@@ -54,7 +54,7 @@ fi
 if [[ ${#3} < 8 ]]; then
     fvc=$(printf %08d ${3})
 elif [[ ${#3} > 8 ]]; then
-    echo "ERROR: Invalid fvc exposure '${3}'!"
+    echo "ERROR: Invalid fvc exposure '${3}'!" >&2
     exit 1
 else
     fvc=${3}
@@ -62,7 +62,7 @@ fi
 if [[ ${#4} < 8 ]]; then
     gfa=$(printf %08d ${4})
 elif [[ ${#4} > 8 ]]; then
-    echo "ERROR: Invalid gfa exposure '${4}'!"
+    echo "ERROR: Invalid gfa exposure '${4}'!" >&2
     exit 1
 else
     gfa=${4}
@@ -93,6 +93,10 @@ while [[ ! -f ${fvc_data} ]]; do
     sleep 5
 done
 [[ -f ${csv} ]] || desi_fvc_proc -i ${fvc_data} --exp ${coordinates} -o ${csv} --extname last
+if [[ $? != 0 ]]; then
+    echo "ERROR: desi_fvc_proc did not complete successfully, skipping fit_rotoff.py." >&2
+    exit 1
+fi
 #
 # Main command.
 #
