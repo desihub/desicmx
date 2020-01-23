@@ -37,39 +37,35 @@ shift $((OPTIND-1))
 #
 # Command-line arguments.
 #
-n_tile=$(echo -n $1 | wc -m)
-if [[ ${n_tile} < 6 ]]; then
-    tile=$(printf %06d $1)
-elif [[ ${n_tile} > 6 ]]; then
-    echo "ERROR: Invalid tile '$1'!"
+if [[ ${#1} < 6 ]]; then
+    tile=$(printf %06d ${1})
+elif [[ ${#1} > 6 ]]; then
+    echo "ERROR: Invalid tile '${1}'!"
     exit 1
 else
-    tile=$1
+    tile=${1}
 fi
-n_night=$(echo -n $2 | wc -m)
-if [[ ${n_night} != 8 ]]; then
-    echo "ERROR: Invalid night '$2'!"
+if [[ ${#2} != 8 ]]; then
+    echo "ERROR: Invalid night '${2}'!"
     exit 1
 else
-    night=$2
+    night=${2}
 fi
-n_fvc=$(echo -n $3 | wc -m)
-if [[ ${n_fvc} < 8 ]]; then
-    fvc=$(printf %08d $3)
-elif [[ ${n_fvc} > 8 ]]; then
-    echo "ERROR: Invalid fvc exposure '$3'!"
+if [[ ${#3} < 8 ]]; then
+    fvc=$(printf %08d ${3})
+elif [[ ${#3} > 8 ]]; then
+    echo "ERROR: Invalid fvc exposure '${3}'!"
     exit 1
 else
-    fvc=$3
+    fvc=${3}
 fi
-n_gfa=$(echo -n $4 | wc -m)
-if [[ ${n_gfa} < 8 ]]; then
-    gfa=$(printf %08d $4)
-elif [[ ${n_gfa} > 8 ]]; then
-    echo "ERROR: Invalid gfa exposure '$4'!"
+if [[ ${#4} < 8 ]]; then
+    gfa=$(printf %08d ${4})
+elif [[ ${#4} > 8 ]]; then
+    echo "ERROR: Invalid gfa exposure '${4}'!"
     exit 1
 else
-    gfa=$4
+    gfa=${4}
 fi
 #
 # File names.
