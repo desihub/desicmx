@@ -7,7 +7,7 @@ DESI commissioning code
 
 `py/desicmx/` : python code specific to CMX that you want to to be able to
     access via `from desicmx import blah`.
-    
+
 `doc/` : documentation of results; create subdirectories as needed.
 
 `analysis/` : wild west dumping ground, create one directory per analysis.
@@ -25,5 +25,4 @@ We won't enforce standard desihub code quality, unit tests, etc. requirements
 for this repo, but please note that this repository is for code and
 documentation, not for data files.
 Analysis data files should go at NERSC in subdirectories of
-`/global/project/projectdirs/desi/cmx/` instead.
-
+`/global/cfs/cdirs/desi/cmx/` instead.
