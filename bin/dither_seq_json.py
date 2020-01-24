@@ -60,15 +60,15 @@ if args.pattern == '3x3':
 # Extended raster: 5x5 with 3 visits to (0,0), 27 exposures in total.
 elif args.pattern == '5x5':
     # Inner 3x3:
-    stepx = np.asarray([ 0,  1, -1, -1,  0,  0,  1,  1,  0, -1])*step
-    stepy = np.asarray([ 0,  1,  0,  0, -1, -1,  0,  0,  1,  0])*step
+    stepx = np.asarray([ 0,  1, -1, -1,  0,  0,  1,  1,  0, -1])
+    stepy = np.asarray([ 0,  1,  0,  0, -1, -1,  0,  0,  1,  0])
 
     # Outer 5x5:
-    _stepx = np.asarray([ 2, -1, -1, -1, -1,  0,  0,  0,  0,  1,  1,  1,  1,  0,  0,  0, -2])*step
-    _stepy = np.asarray([ 2,  0,  0,  0,  0, -1, -1, -1, -1,  0,  0,  0,  0,  1,  1,  1, -1])*step
+    _stepx = np.asarray([ 2, -1, -1, -1, -1,  0,  0,  0,  0,  1,  1,  1,  1,  0,  0,  0, -2])
+    _stepy = np.asarray([ 2,  0,  0,  0,  0, -1, -1, -1, -1,  0,  0,  0,  0,  1,  1,  1, -1])
 
-    stepx = np.concatenate((stepx, _stepx))
-    stepy = np.concatenate((stepy, _stepy))
+    stepx = np.concatenate((stepx, _stepx)) * step
+    stepy = np.concatenate((stepy, _stepy)) * step
 else:
     raise SystemExit('Invalid raster pattern {}'.format(args.pattern))
 
