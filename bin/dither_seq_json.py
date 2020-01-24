@@ -30,7 +30,7 @@ parser.add_argument('-r', '--tilera', required=True, type=float,
                     help='Central RA of the tile [deg]')
 parser.add_argument('-d', '--tiledec', required=True, type=float,
                     help='Central Dec of the tile [deg]')
-parser.add_argument('-p' '--pattern', dest='pattern', default='3x3',
+parser.add_argument('-p', '--pattern', dest='pattern', default='3x3',
                     help='Raster pattern [3x3, 5x5]')
 parser.add_argument('--plot', dest='plot', action='store_true', default=False,
                     help='Plot the dither pattern, for debugging.')
