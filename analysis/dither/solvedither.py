@@ -969,7 +969,8 @@ def plot_one_exp(data, expid, usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         data[c]['spectroflux_ivar'] for c in 'BRZ']), axis=0)
     for i, camera in enumerate('BRZA'):
         tdata = data[camera]
-        ind = np.flatnonzero(tdata['expid'][0, :] == expid)[0]
+        okfiber = np.flatnonzero(tdata['expid'][:, 0] != 0)[0]
+        ind = np.flatnonzero(tdata['expid'][okfiber, :] == expid)[0]
         guess = guess_starcounts(
             tdata['flux_'+guessbanddict[camera]][:, 0])
         p.subplot(2, 4, i+1)

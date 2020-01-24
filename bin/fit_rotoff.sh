@@ -74,7 +74,7 @@ fvc_data=${DESI_SPECTRO_DATA}/${night}/${fvc}/fvc-${fvc}.fits.fz
 csv=./fvc-${fvc}.csv
 coordinates=${DESI_SPECTRO_DATA}/${night}/${fvc}/coordinates-${fvc}.fits
 gfa_reduced=./realtime/${night}/${gfa}/gfa-${gfa}_reduced.fits
-guide_reduced=./realtime/${night}/${gfa}/guide-${gfa}_reduced-00000.fits
+guide_reduced=./realtime/${night}/${gfa}/guide-${gfa}_reduced-00001.fits
 if [[ ${tile:0:4} == "0635" ]]; then
     fiberassign=./code/tiles/063/0635/fiberassign-${tile}.fits
 else
