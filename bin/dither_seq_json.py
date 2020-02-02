@@ -93,16 +93,7 @@ if make_plot:
 
 
 # Generate single interleaved guider+spectrograph script:
-dith_script = [{'sequence'         : 'GFA',
-                'flavor'           : 'science',
-                'exptime'          : '30.0',
-                'correct_for_adc'  : False,
-                'usetemp'          : False,
-                'uselut'           : False,
-                'resetrot'         : False,
-                'passthru'         : '{{ TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format(tile_id, tile_ra, tile_dec),
-                'program'          : 'Dither test field'}]
-dith_script.append({'sequence'         : 'Break'})
+dith_script = []
 
 for j, (dx, dy) in enumerate(zip(stepx, stepy)):
     ra = ra + dx
