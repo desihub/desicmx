@@ -16,20 +16,57 @@ https://desi.lbl.gov/trac/wiki/CommissioningCommissioningPlanning/procedures#GAI
 """
 
 from argparse import ArgumentParser
+import os
 import json
 import numpy as np
+import warnings
+
+from astropy.io import fits
 from astropy import units as u
 
-parser = ArgumentParser(description='Dither Guider+Spectrograph scripter')
+
+def get_tile_coords(tileid):
+    """Open fiberassign file and read tile location.
+
+    Parameters
+    ----------
+    tileid : int
+        Tile ID.
+
+    Returns
+    -------
+    ra : float
+        Boresight RA for this tile.
+    dec : float
+        Boresight declination for this tile.
+    """
+
+    if 'DOS_DESI_TILES' in os.environ:
+        path = os.environ['DOS_DESI_TILES']
+    else:
+        # Fallback to hardcoded path, which should be avoided...
+        path = '/data/tiles/ALL_tiles/20191119'
+        warnings.warn('DOS_DESI_TILES undefined; using {}'.format(path),
+                      UserWarning)
+
+    fibfile = '/'.join([path, 'fiberassign-{:06d}.fits'.format(tileid)])
+    try:
+        hdus = fits.open(fibfile)
+    except FileNotFoundError as e:
+        print('TILE {} cannot be found.\n{}.'.format(tileid, e))
+        raise SystemExit
+
+    header = hdus['PRIMARY'].header
+    ra, dec = header['TILERA'], header['TILEDEC']
+    return ra, dec
+
+
+parser = ArgumentParser(description='Dither Guider + Spectrograph scripter')
 
 # Dithering options for file headers.
 parser.add_argument('step', type=float, help='Dither step size [arcsec]')
 parser.add_argument('-t', '--tileid', required=True, type=int,
                     help='Tile ID from fiberassign')
-parser.add_argument('-r', '--tilera', required=True, type=float,
-                    help='Central RA of the tile [deg]')
-parser.add_argument('-d', '--tiledec', required=True, type=float,
-                    help='Central Dec of the tile [deg]')
 parser.add_argument('-p', '--pattern', dest='pattern', default='3x3',
                     help='Raster pattern [3x3, 5x5]')
 parser.add_argument('--plot', dest='plot', action='store_true', default=False,
@@ -48,8 +85,7 @@ dec = DEC
 
 step = args.step*u.arcsec # Add a unit from astropy, does not change value
 tile_id = args.tileid
-tile_ra = args.tilera
-tile_dec = args.tiledec
+tile_ra, tile_dec = get_tile_coords(tile_id)
 
 
 # Standard raster: 3x3 with 3 visits to (0,0), 11 exposures total.
@@ -163,4 +199,3 @@ dith_filename = 'dithseq_tile_id{:05d}_{}arcsec_dra{}_ddec{}_{}.json'.format(til
 
 json.dump(dith_script, open(dith_filename, 'w'), indent=4)
 print('Use {} in the DESI observer console.'.format(dith_filename))
-
