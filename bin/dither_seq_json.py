@@ -210,9 +210,11 @@ def setup_fibermode(args):
     dith_filename = 'dithseq_fibermode_{:06d}-{:06d}.json'.format(minid, maxid)
     json.dump(dith_script, open(dith_filename, 'w'), indent=4)
     log.info('Use {} in the DESI observer console.'.format(dith_filename))
+    log.warning('Fibermode untested: DO NOT RUN without asking Connie or Klaus!')
 
 
 if __name__ == '__main__':
+    # Main options specified before rastermode and fibermode subcommands.
     p = ArgumentParser(description='Raster/fiber dithering JSON ICS setup program')
     p.add_argument('-d', '--dryrun', action='store_true', default=False,
                    help='Dry run: do not check for fiberassign files')
@@ -222,6 +224,7 @@ if __name__ == '__main__':
     sp = p.add_subparsers(title='subcommands', description='valid subcommands',
                           help='additional help')
 
+    # Raster mode: move telescope boresight with deltara/deltadec
     prmode = sp.add_parser('rastermode', help='Telescope raster program')
     prmode.add_argument('-t', '--tileid', required=True, type=int,
                         help='Tile ID used for raster')
@@ -237,6 +240,7 @@ if __name__ == '__main__':
                         help='Dec offset raster center from Tile Dec')
     prmode.set_defaults(func=setup_rastermode)
 
+    # Fiber mode: set up a sequence of fiberassign tiles.
     pfmode = sp.add_parser('fibermode', help='Fiber dither program')
     pfmode.add_argument('-t', '--tilerange', required=True, nargs=2, type=int,
                         help='Min/max tile ID for positioners')
