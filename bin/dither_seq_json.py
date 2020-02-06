@@ -122,7 +122,7 @@ def setup_rastermode(args):
         # Start a guide sequence.
         dith_script.append({'sequence'         : 'Guide',
                             'flavor'           : 'science',
-                            'exptime'          : 5.0,
+                            'guider_exptime'   : 5.0,
                             'action'           : 'start_guiding',
                             'acquisition_time' : 15.0,
                             'deltara'          : dx.to('arcsec').value,
