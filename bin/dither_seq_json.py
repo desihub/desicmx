@@ -179,38 +179,28 @@ def setup_fibermode(args):
         # Logging variables sent to ICS for output to FITS headers:
         passthru = '{{ TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format(tile_id, tile_ra, tile_dec)
 
-        # DESI sequence.
+        # Stack up DESI sequences. Note: exptime is for spectrographs.
         dith_script.append({'sequence'            : 'DESI',
                             'flavor'              : 'science',
+                            'obstype'             : 'SCIENCE',
                             'fiberassign'         : tile_id,
                             'exptime'             : 60.0,
-                            'obstype'             : 'SCIENCE',
                             'guider_exptime'      : 5.0,
                             'acquisition_exptime' : 20.0,
-                            'program'             : 'Acquisition of Dither Test Field {}'.format(tile_id),
+                            'fvc_exptime'         : 2.0,
                             'simulatemoves'       : False,
-                            'fvc_exptime'         : 2.0})
+                            'usespectrographs'    : True,
+                            'passthru'            : passthru,
+                            'program'             : 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
 
-        # Take a spectrograph exposure.
-        dith_script.append({'sequence'         : 'Spectrographs',
-                            'flavor'           : 'science',
-                            'obstype'          : 'SCIENCE',
-                            'correct_for_adc'  : False,
-                            'usetemp'          : False,
-                            'uselut'           : False,
-                            'resetrot'         : False,
-                            'exptime'          : 60.0,
-                            'passthru'         : passthru,
-                            'program'          : 'Dither fibermode tile_id {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
-
-        # Break, then manually stop guiding before starting the next exposure.
+        # Break needed to manually stop guiding?
         dith_script.append({'sequence'         : 'Break'})
 
     # Dump JSON DESI + spectrograph list into a file.
 #    dith_filename = 'dithseq_fibermode_{:06d}-{:06d}.json'.format(minid, maxid)
 #    json.dump(dith_script, open(dith_filename, 'w'), indent=4)
 #    log.info('Use {} in the DESI observer console.'.format(dith_filename))
-    log.warning('Fibermode output disabled.')
+    log.warning('Fibermode output disabled; contact Klaus before activating.')
 
 
 if __name__ == '__main__':
