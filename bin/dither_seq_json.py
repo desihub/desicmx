@@ -70,7 +70,7 @@ def setup_rastermode(args):
     Parameters
     ----------
     args : argparse.Namespace
-        Argument list from command line fibermode subprogram.
+        Argument list from command line rastermode subprogram.
     """
 
     RA = args.deltara*u.arcsec
@@ -172,7 +172,7 @@ def setup_fibermode(args):
 
     log.debug('{:>7s} {:>7s} {:>7s}'.format('Tile', 'RA', 'Dec'))
 
-    for tile_id in tile_ids:
+    for i, tile_id in enumerate(tile_ids):
         tile_ra, tile_dec = get_tile_coords(tile_id, args.dryrun)
         log.debug('{:7d} {:7g} {:7g}'.format(tile_id, tile_ra, tile_dec))
 
@@ -193,14 +193,16 @@ def setup_fibermode(args):
                             'passthru'            : passthru,
                             'program'             : 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
 
+        if i > 0:
+            dith_script[-1]['correct_for_adc'] = False
+
         # Break needed to manually stop guiding?
         dith_script.append({'sequence'         : 'Break'})
 
     # Dump JSON DESI + spectrograph list into a file.
-#    dith_filename = 'dithseq_fibermode_{:06d}-{:06d}.json'.format(minid, maxid)
-#    json.dump(dith_script, open(dith_filename, 'w'), indent=4)
-#    log.info('Use {} in the DESI observer console.'.format(dith_filename))
-    log.warning('Fibermode output disabled; contact Klaus before activating.')
+    dith_filename = 'dithseq_fibermode_{:06d}-{:06d}.json'.format(minid, maxid)
+    json.dump(dith_script, open(dith_filename, 'w'), indent=4)
+    log.info('Use {} in the DESI observer console.'.format(dith_filename))
 
 
 if __name__ == '__main__':
