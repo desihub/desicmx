@@ -14,3 +14,7 @@ All results are saved in a single FITS file. For details, see DESI-5315.  Notebo
 ## ETC Pipeline
 
 The `GFA-ETC-Pipeline.ipynb` notebook has examples of using the ETC online pipeline to apply these calibrations.
+
+## Guide Frame Centroids
+
+The `Guider-Performance-Studies.ipynb` notebook has examples of comparing the centroids calculated by different codes on long guide sequences.
