@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys
+import os,sys
 import fitsio
 import astropy.io.fits as pyfits
 from astropy.table import Table
@@ -108,12 +108,12 @@ desimeter_dy_bis  = desimeter_dy_bis[ii]
 print(np.std(desimeter_dx))
 print(np.std(dither_dx))
 
-
-plt.figure()
+title=os.path.basename(dither_file).replace(".fits","-vs-desimeter")
+plt.figure(title)
 
 scale=20.
 plt.subplot(121)
-plt.quiver(desimeter_x,desimeter_y,desimeter_dx,desimeter_dy,color="grey",alpha=0.8,units="width",scale=scale,label="desimeter")
+plt.quiver(desimeter_x,desimeter_y,desimeter_dx,desimeter_dy,color="grey",alpha=0.8,units="width",scale=scale,label="desimeter (uncorr)")
 plt.quiver(dither_x,dither_y,dither_dx,dither_dy,color="red",units="width",scale=scale,label="dither")
 x=-0.03
 dx=2
@@ -124,10 +124,24 @@ plt.ylabel("y_tan")
 plt.legend(loc="upper left")
 
 plt.subplot(122)
-plt.quiver(desimeter_x,desimeter_y,desimeter_dx_bis,desimeter_dy_bis,color="grey",alpha=0.8,units="width",scale=scale,label="desimeter (corr)")
+plt.quiver(desimeter_x,desimeter_y,desimeter_dx_bis,desimeter_dy_bis,color="gray",alpha=0.8,units="width",scale=scale,label="desimeter (corr)")
 plt.quiver(dither_x,dither_y,dither_dx,dither_dy,color="red",units="width",scale=scale,label="dither")
 plt.quiver(x,-0.025,dx,0.,color="black",units="width",scale=scale)
 plt.text(x,-0.029,"{} arcsec".format(dx))
+
+rad2arcsec = 180*3600/np.pi
+x=0.02
+y=-0.018
+dy=0.002
+fs=8
+plt.text(x,y,"dx={:3.2f} arcsec".format(corr.dx*rad2arcsec),fontsize=fs)
+plt.text(x,y-dy,"dy={:3.2f} arcsec".format(corr.dy*rad2arcsec),fontsize=fs)
+plt.text(x,y-2*dy,"sxx={:6.5f}".format(corr.sxx),fontsize=fs)
+plt.text(x,y-3*dy,"syy={:6.5f}".format(corr.syy),fontsize=fs)
+plt.text(x,y-4*dy,"sxy={:6.5f}".format(corr.sxy),fontsize=fs)
+plt.text(x,y-5*dy,"rot={:3.2f} arcsec".format(corr.rot_deg*3600),fontsize=fs)
+
+
 plt.xlabel("x_tan")
 plt.ylabel("y_tan")
 plt.legend(loc="upper left")
