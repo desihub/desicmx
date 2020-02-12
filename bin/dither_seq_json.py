@@ -186,18 +186,19 @@ def setup_fibermode(args):
                             'fiberassign'         : tile_id,
                             'exptime'             : 60.0,
                             'guider_exptime'      : 5.0,
-                            'acquisition_exptime' : 20.0,
+                            'acquisition_exptime' : 15.0,
                             'fvc_exptime'         : 2.0,
                             'simulatemoves'       : False,
                             'usespectrographs'    : True,
+                            'stop_guiderloop_when_done' : True,
                             'passthru'            : passthru,
                             'program'             : 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
 
-        if i > 0:
-            dith_script[-1]['correct_for_adc'] = False
-
-        # Break needed to manually stop guiding?
-        dith_script.append({'sequence'         : 'Break'})
+#        if i > 0:
+#            dith_script[-1]['correct_for_adc'] = False
+#
+#        # Break needed to manually stop guiding?
+#        dith_script.append({'sequence'         : 'Break'})
 
     # Dump JSON DESI + spectrograph list into a file.
     dith_filename = 'dithseq_fibermode_{:06d}-{:06d}.json'.format(minid, maxid)
