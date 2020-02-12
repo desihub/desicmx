@@ -87,12 +87,8 @@ x3,y3 = corr.apply(x1,y1)
 desimeter_dx_bis=(x3-x2)*180.*3600/np.pi # now arcsec
 desimeter_dy_bis=(y3-y2)*180.*3600/np.pi # now arcsec
 
-#plt.figure()
-#plt.plot(dither_ra[dither_index>=0],dither_dec[dither_index>=0],"o")
-#plt.plot(target_ra[dither_index[dither_index>=0]],target_dec[dither_index[dither_index>=0]],"o")
-#plt.plot(dither_dy[dither_index>=0],desimeter_dy[dither_index[dither_index>=0]],"o")
-d=np.sqrt(desimeter_dx_bis**2+desimeter_dy_bis**2) # arcsec
-ii=(target_ra!=0)&(d<3)
+dist=np.sqrt(desimeter_dx_bis**2+desimeter_dy_bis**2) # arcsec
+ii=(target_ra!=0)&(dist<3)
 
 target_ra  = target_ra[ii]
 target_dec = target_dec[ii]
@@ -130,16 +126,15 @@ plt.quiver(x,-0.025,dx,0.,color="black",units="width",scale=scale)
 plt.text(x,-0.029,"{} arcsec".format(dx))
 
 rad2arcsec = 180*3600/np.pi
-x=0.02
-y=-0.018
-dy=0.002
-fs=8
-plt.text(x,y,"dx={:3.2f} arcsec".format(corr.dx*rad2arcsec),fontsize=fs)
-plt.text(x,y-dy,"dy={:3.2f} arcsec".format(corr.dy*rad2arcsec),fontsize=fs)
-plt.text(x,y-2*dy,"sxx={:6.5f}".format(corr.sxx),fontsize=fs)
-plt.text(x,y-3*dy,"syy={:6.5f}".format(corr.syy),fontsize=fs)
-plt.text(x,y-4*dy,"sxy={:6.5f}".format(corr.sxy),fontsize=fs)
-plt.text(x,y-5*dy,"rot={:3.2f} arcsec".format(corr.rot_deg*3600),fontsize=fs)
+text =  "dx  = {:3.2f}''\n".format(corr.dx*rad2arcsec)
+text += "dy  = {:3.2f}''\n".format(corr.dy*rad2arcsec)
+text += "sxx = {:6.5f}\n".format(corr.sxx-1)
+text += "syy = {:6.5f}\n".format(corr.syy-1)
+text += "sxy = {:6.5f}\n".format(corr.sxy)
+text += "rot = {:3.2f}''\n".format(corr.rot_deg*3600)
+
+props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+plt.text(0.03,-0.03,text,fontsize=8, bbox=props,verticalalignment='bottom', horizontalalignment='right')
 
 
 plt.xlabel("x_tan")
