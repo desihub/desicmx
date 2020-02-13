@@ -200,7 +200,7 @@ def setup_fibermode(args):
 #        dith_script.append({'sequence'         : 'Break'})
 
     # Dump JSON DESI + spectrograph list into a file.
-    dith_filename = 'dithseq_fibermode_{:06d}-{:06d}.json'.format(minid, maxid)
+    dith_filename = 'dithseq_fibermode_{:06d}_{:06d}.json'.format(minid, maxid)
     json.dump(dith_script, open(dith_filename, 'w'), indent=4)
     log.info('Use {} in the DESI observer console.'.format(dith_filename))
 
