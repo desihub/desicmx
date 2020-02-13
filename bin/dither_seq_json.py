@@ -188,7 +188,6 @@ def setup_fibermode(args):
                             'guider_exptime'      : 5.0,
                             'acquisition_exptime' : 15.0,
                             'fvc_exptime'         : 2.0,
-                            'simulatemoves'       : False,
                             'usespectrographs'    : True,
                             'stop_guiderloop_when_done' : True,
                             'passthru'            : passthru,
