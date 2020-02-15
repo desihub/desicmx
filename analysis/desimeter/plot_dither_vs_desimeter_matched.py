@@ -10,6 +10,14 @@ import numpy as np
 from desimeter.transform.radec2tan import hadec2xy
 from desimeter.simplecorr import SimpleCorr
 
+import argparse
+parser = argparse.ArgumentParser(description='Compare desimeter & dither fiber positions')
+parser.add_argument('dither_file', type=str, help='dither file name')
+parser.add_argument('fvc_file', type=str, help='desi_fvc_proc file name')
+parser.add_argument('fiberassign_file', type=str, help='fiberassign file name')
+parser.add_argument('-e', '--expid', type=int, default=None, help='expid to use from dither file')
+args = parser.parse_args()
+
 
 quiver_units="width"
 quiver_scale=20.
@@ -24,26 +32,28 @@ def text(blabla) :
     plt.text(0.029,-0.029,blabla,fontsize=8, bbox=props,verticalalignment='bottom', horizontalalignment='right')
 
 
-
-dither_file = sys.argv[1]
-fvc_file = sys.argv[2]
-fiberassign_file = sys.argv[3]
+dither_file = args.dither_file
+fvc_file = args.fvc_file
+fiberassign_file = args.fiberassign_file
 
 # Eddie's dithers
 t=fitsio.read(dither_file)
 print(t.dtype.names)
-i=0
+if args.expid is None:
+    i=0
+else:
+    ind = np.flatnonzero(t['expid'][0, :] == args.expid)
+    if len(ind) > 0:
+        i = ind[0]
+    else:
+        raise ValueError(f'could not find expid {args.expid} in dither file.')
+
 err=np.sqrt(t['dxfiboff'][:,i]**2+t['dyfiboff'][:,i]**2)
 roff=np.sqrt(t['xfiboff'][:,i]**2+t['yfiboff'][:,i]**2)
 jj=np.where((err<0.02)&(roff<4.))[0]
 
-#dither_ra    = t['fiber_ditherfit_ra'][jj,i]
-#dither_dec   = t['fiber_ditherfit_dec'][jj,i]
-
-# Eddie: xfiboff = PM RA of star - true RA of star
-# opposite sign because xtan goes as -RA
-dither_dx    = -t['xfiboff'][jj,i]
-dither_dy    = t['yfiboff'][jj,i]
+dither_ra    = t['fiber_ditherfit_ra'][jj,i]
+dither_dec   = t['fiber_ditherfit_dec'][jj,i]
 dither_fiber = t['fiber'][jj,i].astype(int)
 
 # desimeter RA Dec
@@ -71,6 +81,7 @@ tel_ra=head["REQRA"]
 tel_dec=head["REQDEC"]
 desimeter_x,desimeter_y=hadec2xy(-desimeter_ra+tel_ra,desimeter_dec,0,tel_dec)
 target_x,target_y=hadec2xy(-target_ra+tel_ra,target_dec,0,tel_dec)
+dither_x,dither_y=hadec2xy(-dither_ra+tel_ra,dither_dec,0,tel_dec)
 
 # Now find match to dithers
 dither_index = np.zeros(dither_fiber.size,dtype=int)
@@ -85,14 +96,14 @@ desimeter_x  = desimeter_x[dither_index[dither_index>=0]]
 desimeter_y  = desimeter_y[dither_index[dither_index>=0]]
 target_x  = target_x[dither_index[dither_index>=0]]
 target_y  = target_y[dither_index[dither_index>=0]]
-dither_dx = dither_dx[dither_index>=0]
-dither_dy = dither_dy[dither_index>=0]
+dither_x = dither_x[dither_index>=0]
+dither_y = dither_y[dither_index>=0]
 
 rad2arcsec = 180.*3600/np.pi
 desimeter_dx=(desimeter_x-target_x)*rad2arcsec # now arcsec
 desimeter_dy=(desimeter_y-target_y)*rad2arcsec # now arcsec
-dither_x  = target_x + dither_dx/rad2arcsec
-dither_y  = target_y + dither_dy/rad2arcsec
+dither_dx=(dither_x-target_x)*rad2arcsec
+dither_dy=(dither_y-target_y)*rad2arcsec
 
 
 ddx = desimeter_dx-dither_dx
