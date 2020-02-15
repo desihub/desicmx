@@ -4,7 +4,10 @@ import numpy as np
 import pdb
 from scipy.optimize import leastsq
 import desimodel.io
+import astropy
 from astropy.io import fits
+from desimeter.transform import zhaoburge
+from astropy.stats import mad_std
 
 # can we try to eliminate some of the arguments?
 # the data: flux, dflux, delta_x_arcsec, delta_y_arcsec, xfocal, yfocal
@@ -374,12 +377,6 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
         if verbose:
             print('chi2/dof: %f' % (np.sum(chiim**2)/ndof))
         if i == 0:
-            # start the fiber parameter guesses in the bulk of the
-            # dither offsets.
-        #     print('new initial fiber guess enabled.')
-        #     guessfib = [guessflux,
-        #                 -np.median(data['delta_x_arcsec'], axis=1),
-        #                 -np.median(data['delta_y_arcsec'], axis=1)]
             # start the fiber parameter guesses centered at the brightest
             # object
             brightestind = np.argmax(data['spectroflux'], axis=1)
@@ -391,7 +388,6 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
                           impar[brightestind, 1])]
         fibpar, fibunc, chifib = fit_fibers(
             data, *guessim, guess=np.array(guessfib).T, psffun=psffun)
-        # chifib: nfib x nim
         guessfib = [fibpar[:, 0], fibpar[:, 1], fibpar[:, 2]]
         if verbose:
             print('chi2/dof: %f' % (np.sum(chifib**2)/ndof))
@@ -399,9 +395,18 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
     zeropoint = np.median(guessfib[0][m]/guessflux[m])
     guessfib[0] /= zeropoint
     guessim[3] *= zeropoint
+    medxfib = np.median(guessfib[1])
+    medyfib = np.median(guessfib[2])
+    guessfib[1] -= medxfib
+    guessfib[2] -= medyfib
+    guessim[0] += medxfib
+    guessim[1] += medyfib
     chi2fib = np.sum(chifib**2, axis=1)
     chi2fibnull = np.sum(data['spectroflux']**2*data['spectroflux_ivar'],
                          axis=1)
+    psf = [psffun(fwhm0) for fwhm0 in guessim[2]]
+    modflux =  model_flux_full(data, guessfib[0], guessfib[1], guessfib[2],
+                               guessim[0], guessim[1], psf, guessim[3])
     astodeg = 1/60/60
     cosdec = np.cos(np.radians(data['target_dec']))
     fiber_ditherfit_ra = ((data['delta_x_arcsec']+guessfib[1][:, None]+
@@ -422,7 +427,8 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
                 guessflux=guessflux, fiber=data['fiber'][:, 0],
                 expid=data['expid'][0, :],
                 fiber_ditherfit_ra=fiber_ditherfit_ra,
-                fiber_ditherfit_dec=fiber_ditherfit_dec)
+                fiber_ditherfit_dec=fiber_ditherfit_dec,
+                modflux=modflux)
 
 
 def test_performance(fluxguessaccuracy=0.2, verbose=False, niter=10, 
@@ -725,36 +731,117 @@ def damper_deriv(chi, damp, derivnum=1):
         return -0.5*np.sign(chi)/damp*(1+np.abs(chi)/damp)**(-1.5)
 
 
-def guess_starcounts(flux):
+def guess_starcounts(data, camera):
     # very roughly: spectroscopic flux = photometric flux
     # zeropoint = 26.8
-    return flux*10.**((26.8-22.5)/2.5)
+    guessbanddict = {'B':'g', 'R':'r', 'Z':'z', 'A':'r'}
+    flux = data['flux_'+guessbanddict[camera]][:, 0]
+    m = (flux != 0) & (np.isfinite(flux))
+    for f in 'grz':
+        flux[~m] = data[f'flux_{f}'][~m, 0]
+        m = (flux != 0) & (np.isfinite(flux))
+    starcounts = flux*10.**((26.8-22.5)/2.5)
+    return starcounts
 
 
 def quiver_plot_basic(xfocal, yfocal, xfiboff, yfiboff, **kw):
     from matplotlib import pyplot as p
     # -x since RA and X are in opposite directions!
-    p.quiver(xfocal, yfocal, -xfiboff, yfiboff, scale=0.1, scale_units='x',
+    p.quiver(xfocal, yfocal, -xfiboff, yfiboff, scale=0.02, scale_units='x',
+             width=0.0025,
              **kw)
     p.gca().set_aspect('equal')
     p.xlabel('xfocal')
     p.ylabel('yfocal')
-    p.text(0.1, 0.9, 'fiber offsets: 10 mm = 1"', transform=p.gca().transAxes)
+    p.text(0.05, 0.95, 'fiber offsets: 10 mm = 0.2"',
+           transform=p.gca().transAxes)
     p.xlim(-450, 450)
     p.ylim(-450, 450)
     
 
-def quiver_plot(sol, data):
+def quiver_plot(sol, data, color='black', clip=0, clear=True):
     dchi2frac = (sol['chi2fibnull']-sol['chi2fib'])/sol['chi2fibnull']
     m = dchi2frac > 0.9
+    if clip != 0:
+        length = np.hypot(sol['xfiboff'], sol['yfiboff'])
+        sd = mad_std(length[m])
+        med = np.median(length)
+        if clip == 1:
+            m = m & (length < med + 5*sd)
+        if clip == 2:
+            m = m & (length > med + 5*sd)
     from matplotlib import pyplot as p
-    p.clf()
+    if clear:
+        p.clf()
     p.gcf().set_size_inches(6, 5, forward=True)
     xoff = np.mean(sol['xfiboff'][m])
     yoff = np.mean(sol['yfiboff'][m])
     quiver_plot_basic(data['xfocal'][m, 0], data['yfocal'][m, 0],
                       sol['xfiboff'][m]-xoff,
-                      sol['yfiboff'][m]-yoff)
+                      sol['yfiboff'][m]-yoff, color=color)
+    medra = np.median(data['target_ra'][m, :], axis=0)
+    meddec = np.median(data['target_dec'][m, :], axis=0)
+    kpnolat, kpnolng = (31.960595, -111.599208)
+    pa = parallactic_angle(medra, meddec, kpnolat, kpnolng,
+                           np.median(data['mjd_obs'][m, :], axis=0))
+    from astropy.coordinates import SkyCoord, AltAz, EarthLocation
+    kpno = EarthLocation.of_site('kpno')
+    time = astropy.time.Time(np.median(data['mjd_obs'].ravel()), format='mjd')
+    from astropy import units as u
+    coord = SkyCoord(ra=medra*u.deg, dec=meddec*u.deg, frame='icrs')
+    altaz = coord.transform_to(AltAz(obstime=time, location=kpno))
+    
+    p.quiver([350]*len(pa), [-350]*len(pa),
+             np.sin(np.radians(pa)),
+             np.cos(np.radians(pa)),
+             scale=10, alpha=0.2, color=color)
+    xsd = mad_std(sol['xfiboff'][m])
+    ysd = mad_std(sol['yfiboff'][m])
+    if clear:
+        p.text(-410, -370, fr'x: $\mu={xoff:5.2f}, \sigma={xsd:5.2f}$"')
+        p.text(-410, -410, fr'y: $\mu={yoff:5.2f}, \sigma={ysd:5.2f}$"')
+        alt = altaz.alt.to(u.deg).value[0]
+        p.text(200, 400, f'Altitude: {alt:5.1f}')
+
+
+def several_quivers(fitsfn, pdffn):
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib import pyplot as p
+    pdf = PdfPages(pdffn)
+    for fn in fitsfn:
+        sol, data = fits_to_soldata(fn)
+        quiver_plot(sol, data)
+        p.title(os.path.basename(fn))
+        pdf.savefig()
+    pdf.close()
+
+
+def mjd2lst(mjd, lng):
+    """ Stolen from ct2lst.pro in IDL astrolib.
+    Returns the local sidereal time at a given MJD and longitude. """
+
+    mjdstart = 2400000.5
+    jd = mjd + mjdstart
+    c = [280.46061837, 360.98564736629, 0.000387933, 38710000.0 ]
+    jd2000 = 2451545.0
+    t0 = jd - jd2000
+    t = t0/36525.
+    theta = c[0] + (c[1] * t0) + t**2*(c[2] - t/ c[3] )
+    lst = (theta + lng)/15.
+    lst = lst % 24.
+    return lst
+
+
+def parallactic_angle(rr, dd, lat, lng, mjd):  # no precession
+    ha = mjd2lst(mjd, lng)*360/24 - rr
+    latr = np.radians(lat)
+    har = np.radians(ha)
+    ddr = np.radians(dd)
+    from numpy import sin, cos
+    parallactic = -np.degrees(np.arctan2(
+        -np.sin(har),
+        np.cos(ddr)*np.tan(latr)-np.sin(ddr)*np.cos(har)))
+    return parallactic
 
 
 def telparams_plot(sol, data):
@@ -780,6 +867,23 @@ def telparams_plot(sol, data):
     p.legend(loc='upper right')
 
 
+def fiberflux_plot(sol, data):
+    from matplotlib import pyplot as p
+    p.clf()
+    p.gcf().set_size_inches(6, 5, forward=True)
+    p.subplots_adjust(bottom=0.15)
+    relflux = -2.5*np.log10(np.clip(sol['starflux'], 1, np.inf)/
+                            np.clip(sol['guessflux'], 1, np.inf))
+    medrelflux = np.median(relflux)
+    sdrelflux = mad_std(relflux)
+    _ = p.hist(relflux, bins=30,
+               range=[-3*sdrelflux+medrelflux, 3*sdrelflux+medrelflux],
+               histtype='step')
+    p.text(0.1, 0.9, fr'$\mu = {medrelflux:5.2f}, \sigma = {sdrelflux:5.2f}$',
+           transform=p.gca().transAxes)
+    p.xlabel(r'$m_\mathrm{spec} - m_\mathrm{phot}$')
+
+
 def fiber_plot(sol, data, i, guess=None):
     from matplotlib import pyplot as p
     p.clf()
@@ -791,18 +895,25 @@ def fiber_plot(sol, data, i, guess=None):
     dchi2frac = (sol['chi2fibnull']-sol['chi2fib'])/sol['chi2fibnull']
     good = dchi2frac > 0.9
     relflux = np.clip(data['spectroflux'][i, :], 1, np.inf)/guess
-    p.scatter(data['delta_x_arcsec'][i, :]+sol['xtel'],
-              data['delta_y_arcsec'][i, :]+sol['ytel'],
-              c=-2.5*np.log10(relflux))
-    p.plot(-sol['xfiboff'][i], -sol['yfiboff'][i], 'x')
-    p.colorbar()
-    p.xlim(-20, 20)
-    p.ylim(-20, 20)
-    p.gca().set_aspect('equal')
-    extramessage = 'dchi2frac=%4.1f' % dchi2frac[i]
-    if dchi2frac[i] < 0.9:
+    relfluxmod = np.clip(sol['modflux'][i, :], 1, np.inf)/guess
+    relfluxratio = relflux/relfluxmod
+    colors = [relflux, relfluxmod, relfluxratio]
+    titles = ['data', 'model', 'residuals']
+    for j in range(3):
+        p.subplot(1, 3, j+1)
+        p.scatter(data['delta_x_arcsec'][i, :]+sol['xtel'],
+                  data['delta_y_arcsec'][i, :]+sol['ytel'],
+                  c=-2.5*np.log10(colors[j]))
+        p.plot(-sol['xfiboff'][i], -sol['yfiboff'][i], 'x')
+        p.colorbar(orientation='horizontal')
+        p.xlim(-3, 3)
+        p.ylim(-3, 3)
+        p.gca().set_aspect('equal')
+        p.title(titles[j])
+    extramessage = ', dchi2frac=%4.1f' % dchi2frac[i]
+    if not dchi2frac[i] > 0.9:
         extramessage = extramessage + ', EXCLUDED' 
-    p.title(('Fiber %d' % data['fiber'][i, 0])+extramessage)
+    p.suptitle(('Fiber %d' % data['fiber'][i, 0])+extramessage)
 
 
 def prune_data(data, camera, snrcut=5, atleastnfib=20, atleastnim=5,
@@ -837,9 +948,7 @@ def process(data, camera, outdir='.', label='dither%s',
     print('Max snr: %5.1f' %
           np.max(tdata['spectroflux'] *
                  np.sqrt(tdata['spectroflux_ivar'])))
-    guessbanddict = {'B':'g', 'R':'r', 'Z':'z'}
-    guess = guess_starcounts(
-        tdata['flux_'+guessbanddict[camera]][:, 0])
+    guess = guess_starcounts(tdata, camera)
     psffun = partial(SimpleFiberIntegratedPSF, psffun=moffat, pixscale=0.2)
     sol = fit_iterate(tdata, guess, psffun=psffun, verbose=True, niter=niter,
                       **kw)
@@ -866,17 +975,48 @@ def process(data, camera, outdir='.', label='dither%s',
     from matplotlib import pyplot as p
     pdf = PdfPages(pdffn)
     p.clf()
-    quiver_plot(sol, tdata)
-    p.title(label % camera)
+    p.gcf().subplotpars = type(p.gcf().subplotpars)()
+    p.gcf().subplots_adjust()
+    quiver_plot(sol, tdata, clip=1)
+    p.title((label % camera) + ' (clipped)')
+    pdf.savefig()
+    p.clf()
+    quiver_plot(sol, tdata, clip=2)
+    p.title((label % camera) + ' (outliers)')
     pdf.savefig()
     telparams_plot(sol, tdata)
     pdf.savefig()
-    for i in range(tdata.shape[0]):
+    fiberflux_plot(sol, tdata)
+    pdf.savefig()
+    plotfibers = range(len(tdata))
+    if len(plotfibers) > 100:
+        import random
+        plotfibers = random.sample(plotfibers, 100)
+    for i in plotfibers:
         p.clf()
         fiber_plot(sol, tdata, i, guess=guess)
         pdf.savefig()
     pdf.close()
     return out, sol, tdata
+
+
+def fits_to_soldata(fn):
+    out = fits.getdata(fn, 1)
+    data = fits.getdata(fn, 2)
+    expnames = ['xtel', 'dxtel', 'dytel', 'fwhm', 'dfwhm',
+                'transparency', 'dtransparency', 'expid']
+    fibnames = ['starflux', 'dstarflux', 'xfiboff', 'yfiboff',
+                'dxfiboff', 'dyfiboff', 'chi2fib', 'chi2fibnull',
+                'guessflux', 'fiber']
+    bothnames = ['fiber_ditherfit_ra', 'fiber_ditherfit_dec']
+    sol = {}
+    for name in expnames:
+        sol[name] = out[name][0, :].copy()
+    for name in fibnames:
+        sol[name] = out[name][:, 0].copy()
+    for name in bothnames:
+        sol[name] = out[name].copy()
+    return sol, data
 
 
 def multicolor_tel_plot(res):
@@ -929,12 +1069,13 @@ def process_all(data, outdir='.', label='dither%s',
                 niter=10, overwrite=False, **kw):
     from copy import deepcopy
     data = deepcopy(data)
+    print('multiplying errors by 3 and adding 1% in quadrature...')
     for c in data:
         m = np.isfinite(data[c]['spectroflux_ivar'])
         m[m] = data[c]['spectroflux_ivar'][m] > 0
-        data[c]['spectroflux_ivar'][m] = (
-            data[c]['spectroflux_ivar'][m]**(-1) +
-            (0.01*data[c]['spectroflux'][m])**2)**(-1)
+        sig = data[c]['spectroflux_ivar'][m]**(-0.5)
+        sig = np.hypot(3*sig, 0.01*data[c]['spectroflux'][m])
+        data[c]['spectroflux_ivar'][m] = sig**(-2)
     res = {}
     for c in data:
         res[c] = process(data, c, outdir=outdir, label=label,
@@ -955,9 +1096,8 @@ def process_all(data, outdir='.', label='dither%s',
 
 
 def plot_one_exp(data, expid, usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-                 snrcut=100, xrange=[-15, 15], yrange=[-15, 15]):
+                 snrcut=100, xrange=[-5, 5], yrange=[-5, 5]):
     from matplotlib import pyplot as p
-    guessbanddict = {'B':'g', 'R':'r', 'Z':'z', 'A':'r'}
     newdata = {}
     for key in data:
         newdata[key] = data[key]
@@ -969,9 +1109,9 @@ def plot_one_exp(data, expid, usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         data[c]['spectroflux_ivar'] for c in 'BRZ']), axis=0)
     for i, camera in enumerate('BRZA'):
         tdata = data[camera]
-        ind = np.flatnonzero(tdata['expid'][0, :] == expid)[0]
-        guess = guess_starcounts(
-            tdata['flux_'+guessbanddict[camera]][:, 0])
+        expids = np.max(tdata['expid'], axis=0)
+        ind = np.flatnonzero(expids == expid)[0]
+        guess = guess_starcounts(tdata, camera)
         p.subplot(2, 4, i+1)
         relflux = -2.5*np.log10(np.clip(tdata['spectroflux'], 1, np.inf)/
                                 np.clip(guess, 1, np.inf).reshape(-1, 1))
@@ -1016,7 +1156,8 @@ def plot_sequence(sequence, fn, **kw):
         res = ditherdata.rearrange_table(sequence._exposure_table)
     else:
         res = sequence
-    exps = res['R']['expid'][0, :]
+    exps = np.sort(np.unique(res['R']['expid']))
+    exps = exps[exps > 0]
     from matplotlib.backends.backend_pdf import PdfPages
     pdf = PdfPages(fn)
     from matplotlib import pyplot as p
@@ -1028,35 +1169,62 @@ def plot_sequence(sequence, fn, **kw):
         plot_one_exp(res, exp, **kw)
         pdf.savefig()
     pdf.close()
-        
+
+
+def model_fib_offsets(param, data, paramdict=None):
+    if paramdict is None:
+        xtel, ytel, theta = param
+        scale = 1
+    else:
+        xtel = param[paramdict['xtel']] if 'xtel' in paramdict else 0
+        ytel = param[paramdict['ytel']] if 'ytel' in paramdict else 0
+        theta = param[paramdict['theta']] if 'theta' in paramdict else 0
+        scale = param[paramdict['scale']] if 'scale' in paramdict else 1
+                      
+    thetarad = np.radians(theta)
+    # convert to arcseconds; multiply by 1000 and divide by plate scale
+    scalefac = 1000 / 70
+    zbscalefac = 420
+    # negative sign for data['xfocal'] to go from CS5 to radec
+    xfocal, yfocal = -data['xfocal']*scalefac, data['yfocal']*scalefac
+    xfiboff = (xtel +
+               (np.cos(thetarad)-1)*xfocal - np.sin(thetarad)*yfocal +
+               (scale-1)*xfocal)
+    yfiboff = (ytel +
+               np.sin(thetarad)*xfocal + (np.cos(thetarad)-1)*yfocal +
+               (scale-1)*yfocal)
+    if paramdict is not None:
+        for k in paramdict:
+            if k[0:2] != 'zb':
+                continue
+            vx, vy, _ = zhaoburge.getZhaoBurgeTerm(
+                int(k[2:]),
+                xfocal/scalefac/zbscalefac, yfocal/scalefac/zbscalefac)
+            xfiboff += param[paramdict[k]]*vx
+            yfiboff += param[paramdict[k]]*vy
+    return xfiboff, yfiboff
+
 
 def model_rotation_offset(param, data=None, guessflux=None, psffun=None,
-                          fwhm=None, transparency=None):
-    xtel, ytel, theta = param
-    thetarad = np.radians(theta)
-    # convert to microns; divide by plate scale (roughly!)
-    scalefac = 1000 / 70
-    xfocal, yfocal = data['xfocal']*scalefac, data['yfocal']*scalefac
-    # off diagonal terms have the same sign because, confusingly,
-    # xfiboff is in RA and xfocal is in CS5, and these increase in
-    # different directions.
-    xfiboff = xtel + (np.cos(thetarad)-1)*xfocal + np.sin(thetarad)*yfocal
-    yfiboff = ytel + np.sin(thetarad)*xfocal + (np.cos(thetarad)-1)*yfocal
+                          fwhm=None, transparency=None, paramdict=None):
+    xfiboff, yfiboff = model_fib_offsets(param, data, paramdict=paramdict)
     nexp = data.shape[1]
+    if fwhm is None:
+        fwhm = param[paramdict['fwhm']]
     psf = [psffun(fwhm) for i in range(nexp)]
     zero = np.zeros(1, dtype='f4')
     transparency = np.array(transparency)
-    modflux = model_flux_full(data, guessflux, xfiboff, yfiboff, zero, zero, 
+    modflux = model_flux_full(data, guessflux, xfiboff, yfiboff,
+                              zero, zero, 
                               psf, transparency)
     return modflux
     
 
 def chi_rotation_offset(param, data=None, **kw):
     modflux = model_rotation_offset(param, data=data, **kw)
-    scale = (np.sum(modflux*data['spectroflux']*data['spectroflux_ivar'])/
+    trans = (np.sum(modflux*data['spectroflux']*data['spectroflux_ivar'])/
              np.sum(modflux**2*data['spectroflux_ivar']))
-    scale = 1
-    chi = (data['spectroflux']-scale*modflux)*np.sqrt(data['spectroflux_ivar'])
+    chi = (data['spectroflux']-trans*modflux)*np.sqrt(data['spectroflux_ivar'])
     return chi.reshape(-1)
     
 
@@ -1064,10 +1232,8 @@ def rotation_offset(data, camera, guessflux=None, psffun=None,
                     epsfcn=1e-4, fwhm=1.5,
                     atleastnfib=1, atleastnim=1,
                     snrbrightestcut=5, snrcut=5, usepetals=list(range(10)),
-                    index=-1,
+                    index=-1, zbcoeff=[],
                     **kw):
-    # solve for: overall offset, rotation, overal fwhm
-    nparam = 2 + 1 + 2
     if index != -1:
         newdata = {c:data[c][:, index:index+1].copy() for c in data}
         data = newdata
@@ -1075,51 +1241,53 @@ def rotation_offset(data, camera, guessflux=None, psffun=None,
                       atleastnim=atleastnim, snrbrightestcut=snrbrightestcut,
                       usepetals=usepetals)
     data = data[camera]
-    # Lots of objects have SNR ~ 5, presumably ~spuriously in this exposure.
-    # force everything with SNR < 5 to have flux zero.
-    # data['spectroflux'][data['spectroflux']*
-    #                     np.sqrt(data['spectroflux_ivar']) < 5] = 0.
     nfiber, nexp = data['spectroflux'].shape
                 
     if guessflux is None:
         guessbanddict = {'B':'g', 'R':'r', 'Z':'z', 'A':'r'}
-        guessflux = guess_starcounts(
-            data['flux_'+guessbanddict[camera]][:, 0])
+        guessflux = guess_starcounts(data, camera)
     if psffun is None:
         from functools import partial
         # psffun = partial(SimpleFiberIntegratedPSF, psffun=moffat,
         #                  pixscale=0.2)
         psffun = partial(SimplePSF, psffun=moffat)
     args = dict(data=data, psffun=psffun, guessflux=guessflux,
-                fwhm=fwhm, transparency=1)
+                transparency=1)
     def chi(param, args=None):
         dchi = damper(chi_rotation_offset(param, **args), 5)
         return dchi
 
     bestchi2 = np.inf
-    # apparently this problem is nasty and has a lot of local minima?  Start
-    # with a grid search?
-    for dx in np.linspace(-20, 20, 41):
-        for dy in np.linspace(-20, 20, 41):
-            for rot in np.linspace(-0.2, 0.2, 41):
-                chi2 = np.sum(chi([dx, dy, rot], args=args)**2)
-                if chi2 < bestchi2:
-                    bestchi2 = chi2
-                    bestparam = [dx, dy, rot]
-    guess = bestparam
+    # apparently this problem is nasty and has a lot of local minima?
+    # Start with a grid search?
+    # for dx in np.linspace(-20, 20, 41):
+    #     for dy in np.linspace(-20, 20, 41):
+    #         for rot in np.linspace(-0.2, 0.2, 41):
+    #             chi2 = np.sum(chi([dx, dy, rot], args=args)**2)
+    #             if chi2 < bestchi2:
+    #                 bestchi2 = chi2
+    #                 bestparam = [dx, dy, rot]
+    guess = [0, 0, 0, fwhm] + [0]*len(zbcoeff)
+    paramdict = dict(xtel=0, ytel=1, theta=2, fwhm=3)
+    for i, term in enumerate(zbcoeff):
+        paramdict[f'zb{term}'] = 4+i
+    args['paramdict'] = paramdict
 
     res = leastsq(chi, guess, args=(args,), epsfcn=epsfcn, **kw)
     chibest = chi(res[0], args=args)
     param = res[0]
-    theta = np.radians(param[2])
-    xfocal, yfocal = data['xfocal'][:, 0], data['yfocal'][:, 0]
-    # off diagonal terms have the same sign because, confusingly,
-    # xfiboff is in RA and xfocal is in CS5, and these increase in
-    # different directions.
-    xfiboff = (np.cos(theta)-1)*xfocal + np.sin(theta)*yfocal
-    yfiboff = np.sin(theta)*xfocal + (np.cos(theta)-1)*yfocal
-    xfiboff, yfiboff = xfiboff*1000/70, yfiboff*1000/70
-    out = dict(xtel=param[0], ytel=param[1], rotation=param[2],
-               xfiboff=xfiboff, yfiboff=yfiboff)
+    out = {key: param[paramdict[key]] for key in paramdict}
+    xfiboff, yfiboff = model_fib_offsets(param, data, paramdict=paramdict)
+    out['xfiboff'] = xfiboff
+    out['yfiboff'] = yfiboff
+    modflux = model_rotation_offset(param, **args)
+    trans = (np.sum(modflux*data['spectroflux']*data['spectroflux_ivar'])/
+             np.sum(modflux**2*data['spectroflux_ivar']))
+    out['trans'] = trans
+    out['modflux'] = modflux*trans
+    out['xfocal'] = data['xfocal']
+    out['yfocal'] = data['yfocal']
+    out['guessflux'] = guessflux
+    out['spectroflux'] = data['spectroflux']
     return out
 

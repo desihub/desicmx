@@ -45,29 +45,36 @@ class DitherSequence:
         
         coords = config['coordinates']
         self._dithertype = coords['dithertype']
-        self._wcsind = coords['wcsind'] if 'wcsind' in coords else 'after'
-        self._usewcspair = int(coords['usepair']) if 'usepair' in coords else 1
-        
-        self._wcs = fits.getdata(coords['wcsfile'], 2)
-        self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
-        self._central_exposure = int(sequence['centralexposure'])
 
         if coords['dithertype'] == 'telescope':
+            self._wcsind = coords['wcsind'] if 'wcsind' in coords else 'after'
+            self._usewcspair = (int(coords['usepair'])
+                                if 'usepair' in coords else 1)
+            self._wcs = fits.getdata(coords['wcsfile'], 2)
+            self._wcs = self._wcs[np.argsort(self._wcs['mjd_obs'])]
+            self._central_exposure = int(sequence['centralexposure'])
+            import re
             fadir = coords['fiberassigndir']
             self._ditherfa = fits.getdata(os.path.join(
                 fadir, 'fiberassign-%s.fits' % coords['ditheredtilenum']))
             self._unditherfa = fits.getdata(os.path.join(
                 fadir, 'fiberassign-%s.fits' % coords['unditheredtilenum']))
-            expnum = [int(fn.split('.')[0].split('-')[1])
+            expnum = [int(re.split('-|_', fn)[1])
                       for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
             self._central_wcs = self._wcs[centralind]
 
             # Set the Tile ID for the output metadata.
             self._tileid = coords['unditheredtilenum']
+        elif coords['dithertype'] == 'fiber':
+            if 'unditheredtilenum' in coords:
+                fadir = coords['fiberassigndir']
+                self._unditherfa = fits.getdata(os.path.join(
+                    fadir,
+                    'fiberassign-%s.fits' % coords['unditheredtilenum']))
+                print(fadir, coords['unditheredtilenum'])
         else:
-            raise ValueError('not implemented')
-
+             raise ValueError('not implemented')
         # Extract the list of exposures on disk.
         self._exposure_files = getfilenames(self._exposures, self._date,
                                             self._filetype,
@@ -79,14 +86,19 @@ class DitherSequence:
 
 
     def _buildtable(self):
+        if self._location == 'nersc':
+            rawdir = '/project/projectdirs/desi/spectro/data/'
+        else:
+            raise ValueError('unknown location!')
         return buildtable(self._exposure_files, self._filetype,
                           self._dithertype,
-                          unditherfa=self._unditherfa,
-                          ditherfa=self._ditherfa,
-                          centralwcs=self._central_wcs,
-                          lookup_wcs=self.lookup_wcs,
-                          tileid=self._tileid,
-                          usewcspair=self._usewcspair)
+                          unditherfa=getattr(self, '_unditherfa', None),
+                          ditherfa=getattr(self, '_ditherfa', None),
+                          centralwcs=getattr(self, '_central_wcs', None),
+                          lookup_wcs=getattr(self, 'lookup_wcs', None),
+                          tileid=getattr(self, '_tileid', None),
+                          usewcspair=getattr(self, '_usewcspair', None),
+                          rawdir=rawdir)
                    
     def lookup_wcs(self, mjd):
         # expfn = self._exposure_files[expnum]
@@ -103,7 +115,7 @@ class DitherSequence:
         return twcs
 
     def rearrange_table(self):
-        return rearrange_table(self._exposures_table)
+        return rearrange_table(self._exposure_table)
 
     def save(self, filename=None, overwrite=True):
         """Save exposure table to a FITS file.
@@ -169,16 +181,19 @@ def rearrange_table(table):
 def buildtable(exposure_files, filetype, dithertype,
                unditherfa=None, ditherfa=None,
                centralwcs=None, lookup_wcs=None, tileid=0,
-               verbose=1, usewcspair=1):
+               verbose=1, usewcspair=1, rawdir=None):
     """Loop through the exposure list and construct an observation
     table."""
 
     tabrows = []
     if ditherfa is not None and isinstance(ditherfa, str):
         ditherfa = fits.getdata(ditherfa, 'FIBERASSIGN')
+        if not np.all(ditherfa['fiber'] == np.arange(len(ditherfa))):
+            raise ValueError('weird dither fa file?')
     if unditherfa is not None and isinstance(unditherfa, str):
         unditherfa = fits.getdata(unditherfa, 'FIBERASSIGN')
-        
+        if not np.all(unditherfa['fiber'] == np.arange(len(unditherfa))):
+            raise ValueError('weird undither fa file?')
 
     for i, (expid, exfiles) in enumerate(exposure_files.items()):
         specflux_b, specflux_r, specflux_z = [], [], []
@@ -189,7 +204,8 @@ def buildtable(exposure_files, filetype, dithertype,
 
         if verbose >= 1:
             print(expid)
-        if (verbose >= 1) and (lookup_wcs is None or centralwcs is None):
+        if ((verbose >= 1) and (dithertype == 'telescope') and
+            (lookup_wcs is None or centralwcs is None)):
             print('Ignoring any intentional telescope offset...')
         for exfile in exfiles:
             if verbose >= 2:
@@ -212,12 +228,25 @@ def buildtable(exposure_files, filetype, dithertype,
             fluxdata = scipy.ndimage.median_filter(fluxdata, [1, 11])
             ivardata = hdu['IVAR'].data
             fibermap = hdu['FIBERMAP'].data
+            if np.all(fibermap['target_ra'] == 0):
+                # fiber map is not in nightwatch data, is in redux data.
+                # we need to track down the "real" information.
+                # I guess try to look up
+                # the real fiberassign file.
+                # there is the tileid keyword in the header.
+                # could also go fishing in the acquisition directory.
+                if rawdir is None:
+                    raise ValueError('could not find real fibermap!')
+                nightexpdir = '/'.join(exfile.split('/')[-3:-1])
+                faname = f'fiberassign-{fluxhead["TILEID"]:06d}.fits'
+                ditherfafn = os.path.join(rawdir, nightexpdir, faname)
+                ditherfa = fits.getdata(ditherfafn, 'FIBERASSIGN')
+                if not np.all(ditherfa['fiber'] ==
+                              np.arange(len(ditherfa))):
+                    raise ValueError('weird fiberassign file')
+                fibermap = ditherfa[fibermap['fiber']]
+                        
             exptime = fluxhead['EXPTIME']
-            if not np.all(unditherfa['FIBER'] ==
-                          np.arange(len(unditherfa))):
-                raise ValueError('weird fiberassign file format!')
-            fibermap = unditherfa[fibermap['FIBER']]
-
             target_id = fibermap['TARGETID']
             target_ra = fibermap['TARGET_RA']
             target_dec = fibermap['TARGET_DEC']
@@ -226,32 +255,31 @@ def buildtable(exposure_files, filetype, dithertype,
             flux_g = fibermap['FLUX_G']
             flux_r = fibermap['FLUX_R']
             flux_z = fibermap['FLUX_Z']
-            x, y = [fibermap['FIBERASSIGN_{}'.format(val)] for val in ('X', 'Y')]
+            x, y = [fibermap['FIBERASSIGN_{}'.format(val)]
+                    for val in ('X', 'Y')]
 
             camera = fluxhead['CAMERA'][0].upper()
+            mjd = fluxhead['MJD-OBS']
+
+            ontarget = ((fibermap['targetid'] ==
+                         unditherfa['targetid'][fiber]) &
+                        (fibermap['objtype'] == 'TGT'))
+            ontarget = (ontarget &
+                        (fibermap['morphtype'] == 'PSF'))
+            if 'FIBERSTATUS' in fibermap.dtype.names:
+                ontarget = ontarget & (fibermap['fiberstatus'] == 0)
 
             if dithertype == 'telescope':
-                dithra = ditherfa['target_ra']
-                dithdec = ditherfa['target_dec']
-                udithra = unditherfa['target_ra']
-                udithdec = unditherfa['target_dec']
-                ontarget = ((ditherfa['targetid'] ==
-                             unditherfa['targetid']) &
-                            (ditherfa['objtype'] == 'TGT'))
-                ontarget = (ontarget &
-                            (unditherfa['morphtype'] == 'PSF'))
+                dithra = ditherfa['target_ra'][fiber]
+                dithdec = ditherfa['target_dec'][fiber]
+                udithra = unditherfa['target_ra'][fiber]
+                udithdec = unditherfa['target_dec'][fiber]
+                if np.sum(ontarget) == 0:
+                    print('warning: no fibers on target?')
                 dfiberra = (dithra-udithra)*np.cos(np.radians(udithdec))*60*60
                 dfiberdec = (dithdec-udithdec)*60*60
-                if not np.all(ditherfa['FIBER'] ==
-                              np.arange(len(ditherfa))):
-                    raise ValueError('unexpected shape of dither file')
                 dfiberra[~ontarget] = np.nan
                 dfiberdec[~ontarget] = np.nan
-                dfiberra = dfiberra[fiber]
-                dfiberdec = dfiberdec[fiber]
-                mjd = fluxhead['MJD-OBS']
-                dra = dfiberra
-                ddec = dfiberdec
                 if lookup_wcs is not None and centralwcs is not None:
                     wcs = lookup_wcs(mjd)
                     wind = usewcspair
@@ -266,6 +294,29 @@ def buildtable(exposure_files, filetype, dithertype,
                     if np.all(~np.isfinite(dra)):
                         print('warning: no good telescope offset, %s' %
                               exfile)
+                        import pdb
+                        pdb.set_trace()
+            elif dithertype == 'fiber':
+                # the _dithered_ fiberassign file info is in the fibermap
+                # the _undithered_ fiberassign file is either specified
+                # or needs to be extracted from the raw directory.
+                # today, we need only deal with the former case.
+                if unditherfa is None:
+                    raise ValueError('not implemented')
+                
+                dithra = target_ra
+                dithdec = target_dec
+                udithra = unditherfa['target_ra'][fiber]
+                udithdec = unditherfa['target_dec'][fiber]
+                target_ra = udithra
+                target_dec = udithdec
+                if np.sum(ontarget) == 0:
+                    print('warning: no fibers on target?')
+                    pdb.set_trace()
+                dra = (dithra-udithra)*np.cos(np.radians(udithdec))*60*60
+                ddec = (dithdec-udithdec)*60*60
+                dra[~ontarget] = np.nan
+                ddec[~ontarget] = np.nan
             else:
                 raise ValueError('not implemented')
 
