@@ -267,7 +267,11 @@ def buildtable(exposure_files, filetype, dithertype,
             ontarget = (ontarget &
                         (fibermap['morphtype'] == 'PSF'))
             if 'FIBERSTATUS' in fibermap.dtype.names:
-                ontarget = ontarget & (fibermap['fiberstatus'] == 0)
+                okstatus = fibermap['fiberstatus'] == 0
+                if ~np.any(okstatus):
+                    print('no okay fibers; skipping fiberstatus cut.')
+                else:
+                    ontarget = ontarget & (fibermap['fiberstatus'] == 0)
 
             if dithertype == 'telescope':
                 dithra = ditherfa['target_ra'][fiber]

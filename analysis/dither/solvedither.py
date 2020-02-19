@@ -810,8 +810,28 @@ def several_quivers(fitsfn, pdffn):
     pdf = PdfPages(pdffn)
     for fn in fitsfn:
         sol, data = fits_to_soldata(fn)
-        quiver_plot(sol, data)
+        quiver_plot(sol, data, clip=1)
         p.title(os.path.basename(fn))
+        pdf.savefig()
+    pdf.close()
+
+
+def chromatic_quivers(fitsfn, pdffn):
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib import pyplot as p
+    pdf = PdfPages(pdffn)
+    # assume we are given the B band quivers
+    for fn in fitsfn:
+        solb, datab = fits_to_soldata(fn)
+        solr, datar = fits_to_soldata(fn.replace('-B', '-R'))
+        solz, dataz = fits_to_soldata(fn.replace('-B', '-Z'))
+        solb['xfiboff'] -= solr['xfiboff']
+        solb['yfiboff'] -= solr['yfiboff']
+        solz['xfiboff'] -= solr['xfiboff']
+        solz['yfiboff'] -= solr['yfiboff']
+        quiver_plot(solb, datab, color='blue', clip=1)
+        quiver_plot(solz, datab, color='red', clear=False, clip=1)
+        p.title(os.path.basename(fn) + ' multicolor')
         pdf.savefig()
     pdf.close()
 
@@ -1003,7 +1023,7 @@ def process(data, camera, outdir='.', label='dither%s',
 def fits_to_soldata(fn):
     out = fits.getdata(fn, 1)
     data = fits.getdata(fn, 2)
-    expnames = ['xtel', 'dxtel', 'dytel', 'fwhm', 'dfwhm',
+    expnames = ['xtel', 'dxtel', 'ytel', 'dytel', 'fwhm', 'dfwhm',
                 'transparency', 'dtransparency', 'expid']
     fibnames = ['starflux', 'dstarflux', 'xfiboff', 'yfiboff',
                 'dxfiboff', 'dyfiboff', 'chi2fib', 'chi2fibnull',
