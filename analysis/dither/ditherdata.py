@@ -14,7 +14,7 @@ class DitherSequence:
     """Access class to dithering sequence data from nightwatch or redux
     files."""
 
-    def __init__(self, inifile, dry_run, output):
+    def __init__(self, inifile, dry_run=False, output=None):
         """Parse a configuration file in INI format.
 
         Parameters
@@ -86,7 +86,7 @@ class DitherSequence:
 
 
     def _buildtable(self):
-        if self._location == 'nersc':
+        if self._location in ['nersc', 'nersc_dither']:
             rawdir = '/project/projectdirs/desi/spectro/data/'
         else:
             raise ValueError('unknown location!')
@@ -129,6 +129,8 @@ class DitherSequence:
         """
         if filename is None:
             filename = self._output
+        if filename is None:
+            raise ValueError('filename not set and output not set.')
         self._exposure_table.write(filename, overwrite=overwrite)
 
     def __str__(self):
@@ -184,6 +186,11 @@ def buildtable(exposure_files, filetype, dithertype,
                verbose=1, usewcspair=1, rawdir=None):
     """Loop through the exposure list and construct an observation
     table."""
+
+    if ((len(exposure_files) == 0) or
+        (len(sum((x for x in exposure_files.values()), [])) == 0)):
+        print('no files!')
+        return None
 
     tabrows = []
     if ditherfa is not None and isinstance(ditherfa, str):
@@ -392,6 +399,8 @@ def getfilenames(expid, date, filetype, location):
 
         if location == 'nersc':
             prefix = '/global/project/projectdirs/desi/spectro/redux/daily/exposures'
+        elif location == 'nersc_dither':
+            prefix = '/global/project/projectdirs/desi/spectro/redux/dither/exposures'
         elif location == 'kpno':
             prefix = '/exposures/desi' # not correct path!
         else:
