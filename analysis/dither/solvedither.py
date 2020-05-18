@@ -42,7 +42,8 @@ def gaussian(x, y, fwhm, e1=0, e2=0):
     sigma = fwhm/np.sqrt(8*np.log(2))
     icovar = fwhme1e2_to_icovar(sigma, e1, e2)
     r2 = x**2*icovar[0, 0] + 2*icovar[0, 1]*x*y + y**2*icovar[1, 1]
-    psf =  ((2*np.pi*sigma**2)**(-1)*np.exp(-0.5*(r2)))
+    normsig = np.linalg.det(icovar)**(-0.25)
+    psf =  ((2*np.pi*normsig**2)**(-1)*np.exp(-0.5*(r2)))
     return psf
 
 
@@ -56,15 +57,18 @@ def moffat(x, y, fwhm, beta=3.5, e1=0, e2=0):
     if np.any(r2 < 0):
         print('crazy values to moffat ellipticity')
         r2 = np.clip(r2, 0, np.inf)
-    return (beta - 1)/(np.pi*alpha**2)*(1+r2/alpha**2)**(-beta)
+    normsig = np.linalg.det(icovar)**(-0.25)
+    return (beta - 1)/(np.pi*normsig**2)*(1+r2)**(-beta)
 
 
-def invariable_gaussian(x, y, xf, yf, fwhm, e1=0, e2=0):
-    return gaussian(x, y, np.hypot(fwhm, 0.5), e1=e1, e2=e2)
+def invariable_gaussian(x, y, xf, yf, fwhm, e1=0, e2=0,
+                        quadrature=0.5):
+    return gaussian(x, y, np.hypot(fwhm, quadrature), e1=e1, e2=e2)
 
 
-def invariable_moffat(x, y, xf, yf, fwhm, beta=3.5, e1=0, e2=0):
-    return moffat(x, y, np.hypot(fwhm, 0.5), beta=beta, e1=e1, e2=e2)
+def invariable_moffat(x, y, xf, yf, fwhm, beta=3.5, e1=0, e2=0,
+                      quadrature=0.5):
+    return moffat(x, y, np.hypot(fwhm, quadrature), beta=beta, e1=e1, e2=e2)
 
 
 def variable_gaussian(x, y, xf, yf, fwhm, xy, yy):
@@ -876,7 +880,7 @@ def quiver_plot_basic(xfocal, yfocal, xfiboff, yfiboff,
     from matplotlib import pyplot as p
     # -x since RA and X are in opposite directions!
     p.quiver(xfocal, yfocal, -xfiboff, yfiboff, scale=asononemm,
-             scale_units='x', width=0.0025, **kw)
+             scale_units='x', width=width, **kw)
     p.gca().set_aspect('equal')
     p.xlabel('xfocal (mm)')
     p.ylabel('yfocal (mm)')
@@ -1039,7 +1043,8 @@ def chi2_plot(sol, data):
     pointsize = 3
     alpha = 1
     p.scatter(data['xfocal'][:, 0], data['yfocal'][:, 0],
-              c=np.sum(chi, axis=1), vmin=-5, vmax=5, s=pointsize, alpha=alpha)
+              c=np.sum(chi, axis=1), vmin=-5, vmax=5, s=pointsize, alpha=alpha,
+              rasterized=True)
     p.xlabel('xfocal (mm)')
     p.ylabel('yfocal (mm)')
     cb = p.colorbar()
@@ -1048,7 +1053,8 @@ def chi2_plot(sol, data):
     p.subplot(2, 2, 2)
     p.scatter(data['xfocal'][:, 0], data['yfocal'][:, 0],
               c=np.sum(chi**2, axis=1)/(chi.shape[1]-3),
-              vmin=0, vmax=15, s=pointsize, alpha=alpha)
+              vmin=0, vmax=15, s=pointsize, alpha=alpha,
+              rasterized=True)
     p.gca().set_aspect('equal')
     cb = p.colorbar()
     p.xlabel('xfocal (mm)')
@@ -1070,7 +1076,7 @@ def chi2_plot(sol, data):
     isig = data['spectroflux_ivar']**0.5
     magisig = 1.086*np.abs(isig*np.clip(data['spectroflux'], 1, np.inf))
     p.scatter(xoff.reshape(-1), yoff.reshape(-1), c=(dmag).reshape(-1),
-              vmin=-0.5, vmax=0.5, s=pointsize/2, alpha=alpha)
+              vmin=-0.5, vmax=0.5, s=pointsize/2, alpha=alpha, rasterized=True)
     p.xlim(-3, 3)
     p.ylim(-3, 3)
     p.xlabel('total fiber offset (x)')
@@ -1079,34 +1085,37 @@ def chi2_plot(sol, data):
     cb.set_label('residual (mag)')
 
 
-def fiboff_hist_plot(sol, data):
+def fiboff_hist_plot(sol, data, sigma=5):
     from matplotlib import pyplot as p
     p.subplots_adjust(wspace=0.2, left=0.15, bottom=0.15, hspace=0.3)
     from astropy.stats import sigma_clipped_stats
-    _, _, xsd = sigma_clipped_stats(sol['xfiboff'], sigma=5)
-    _, _, ysd = sigma_clipped_stats(sol['yfiboff'], sigma=5)
+    dchi2frac = (sol['chi2fibnull']-sol['chi2fib'])/(
+        sol['chi2fibnull']+(sol['chi2fibnull'] == 0))
+    m = dchi2frac > 0.9
+    _, _, xsd = sigma_clipped_stats(sol['xfiboff'][m], sigma=sigma)
+    _, _, ysd = sigma_clipped_stats(sol['yfiboff'][m], sigma=sigma)
     totoff = np.hypot(sol['xfiboff'], sol['yfiboff'])
-    rmstotoff = np.sqrt(sigma_clipped_stats(totoff**2, sigma=5)[0])
+    rmstotoff = np.sqrt(sigma_clipped_stats(totoff[m]**2, sigma=sigma)[0])
     p.clf()
     p.gcf().set_size_inches(6, 5, forward=True)
     p.subplot(2, 2, 1)
-    p.plot(sol['xfiboff'], sol['yfiboff'], '+', alpha=0.5)
+    p.plot(sol['xfiboff'][m], sol['yfiboff'][m], '+', alpha=0.5)
     p.xlim(-0.5, 0.5)
     p.ylim(-0.5, 0.5)
     p.xlabel('fiber offset, ra, arcsec')
     p.ylabel('fiber offset, dec, arcsec')
     p.subplot(2, 2, 2)
-    p.hist(sol['yfiboff'], range=[-0.5, 0.5], histtype='step', bins=20)
+    p.hist(sol['yfiboff'][m], range=[-0.5, 0.5], histtype='step', bins=20)
     p.text(0.6, 0.9, fr"$\sigma_y = {ysd:5.2f}''$",
            transform=p.gca().transAxes)
     p.xlabel('fiber offset, dec, arcsec')
     p.subplot(2, 2, 3)
-    p.hist(sol['xfiboff'], range=[-0.5, 0.5], histtype='step', bins=20)
+    p.hist(sol['xfiboff'][m], range=[-0.5, 0.5], histtype='step', bins=20)
     p.text(0.6, 0.9, fr"$\sigma_x = {xsd:5.2f}''$",
            transform=p.gca().transAxes)
     p.xlabel('fiber offset, ra, arcsec')
     p.subplot(2, 2, 4)
-    p.hist(totoff, range=[0, 0.7], histtype='step', bins=20)
+    p.hist(totoff[m], range=[0, 0.7], histtype='step', bins=20)
     p.axvline(rmstotoff, linestyle='--')
     p.xlabel('fiber offset, total, arcsec')
     p.text(0.6, 0.9, fr"$\sigma = {rmstotoff:5.2f}''$",
@@ -1206,7 +1215,7 @@ def fiberflux_plot(sol, data):
     p.ylabel(r'$(m_\mathrm{spec} - m_\mathrm{model})/\sigma$')
 
 
-def fiber_plot(sol, data, i, guess=None):
+def fiber_plot(sol, data, i, guess=None, label=False):
     from matplotlib import pyplot as p
     p.clf()
     p.gcf().set_size_inches(6, 5, forward=True)
@@ -1232,12 +1241,19 @@ def fiber_plot(sol, data, i, guess=None):
                   data['delta_y_arcsec'][i, :]+sol['ytel'],
                   c=-2.5*np.log10(colors[j]), zorder=3)
         p.plot(-sol['xfiboff'][i], -sol['yfiboff'][i], 'x', zorder=4)
-        cb = p.colorbar(orientation='horizontal')
+        if label:
+            pad = 0.2
+        else:
+            pad = 0.15
+        cb = p.colorbar(orientation='horizontal', pad=pad)
         cb.locator = tick_locator
         cb.update_ticks()
         cb.set_label('mag')
         p.xlim(-3, 3)
         p.ylim(-3, 3)
+        if j == 0:
+            p.ylabel('ddec, arcsec')
+        p.xlabel('dra, arcsec')
         p.gca().set_aspect('equal')
         p.title(titles[j])
         if j != 0:
@@ -1252,7 +1268,10 @@ def prune_data(data, camera, snrcut=5, atleastnfib=20, atleastnim=5,
                snrbrightestcut=5, usepetals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
                ignore_undithered=True):
     dx, dy = data[camera]['delta_x_arcsec'], data[camera]['delta_y_arcsec']
-    mgoodfib = np.all(np.isfinite(dx), axis=1)
+    mgoodfib = np.ones(data[camera].shape[0], dtype='bool')
+    for c in data:
+        mgoodfib &= np.all(np.isfinite(data[c]['delta_x_arcsec']), axis=1)
+        mgoodfib &= np.all(np.isfinite(data[c]['delta_y_arcsec']), axis=1)
     mgoodfib &= np.array([fib // 500 in usepetals
                           for fib in data[camera]['fiber'][:, 0]])
     mgoodim = ~np.all(~np.isfinite(dx), axis=0)
@@ -1358,10 +1377,19 @@ def fits_to_soldata(fn):
     bothnames = ['fiber_ditherfit_ra', 'fiber_ditherfit_dec', 'modflux']
     sol = {}
     for name in expnames:
+        if name not in out.dtype.names:
+            print(f'missing field {name}')
+            continue
         sol[name] = out[name][0, :].copy()
     for name in fibnames:
+        if name not in out.dtype.names:
+            print(f'missing field {name}')
+            continue
         sol[name] = out[name][:, 0].copy()
     for name in bothnames:
+        if name not in out.dtype.names:
+            print(f'missing field {name}')
+            continue
         sol[name] = out[name].copy()
     if 'psfparam' in out.dtype.names:
         sol['psfparam'] = out['psfparam'][0].copy()
