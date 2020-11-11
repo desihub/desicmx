@@ -4,10 +4,11 @@ import os
 
 from astropy.table import Table
 from astropy.io import fits
-from astropy.io import ascii
 
 import numpy as np
 import scipy.ndimage
+
+import desimodel.io
 
 
 class DitherSequence:
@@ -42,7 +43,7 @@ class DitherSequence:
 
         if 'coordinates' not in config:
             raise ValueError('no coordinates set for dither!')
-        
+
         coords = config['coordinates']
         self._dithertype = coords['dithertype']
 
@@ -74,7 +75,7 @@ class DitherSequence:
                     'fiberassign-%s.fits' % coords['unditheredtilenum']))
                 print(fadir, coords['unditheredtilenum'])
         else:
-             raise ValueError('not implemented')
+            raise ValueError('not implemented')
         # Extract the list of exposures on disk.
         self._exposure_files = getfilenames(self._exposures, self._date,
                                             self._filetype,
@@ -84,9 +85,8 @@ class DitherSequence:
             # Construct fiber output.
             self._exposure_table = self._buildtable()
 
-
     def _buildtable(self):
-        if self._location in ['nersc', 'nersc_dither']:
+        if self._location in ['nersc', 'nersc_dither', 'nersc_andes']:
             rawdir = '/project/projectdirs/desi/spectro/data/'
         else:
             raise ValueError('unknown location!')
@@ -99,7 +99,7 @@ class DitherSequence:
                           tileid=getattr(self, '_tileid', None),
                           usewcspair=getattr(self, '_usewcspair', None),
                           rawdir=rawdir)
-                   
+
     def lookup_wcs(self, mjd):
         # expfn = self._exposure_files[expnum]
         # mjd = fits.getheader(expfn)['MJD-OBS']
@@ -183,12 +183,12 @@ def rearrange_table(table):
 def buildtable(exposure_files, filetype, dithertype,
                unditherfa=None, ditherfa=None,
                centralwcs=None, lookup_wcs=None, tileid=0,
-               verbose=1, usewcspair=1, rawdir=None):
+               verbose=1, usewcspair=1, rawdir=None, correct_area=True):
     """Loop through the exposure list and construct an observation
     table."""
 
     if ((len(exposure_files) == 0) or
-        (len(sum((x for x in exposure_files.values()), [])) == 0)):
+            (len(sum((x for x in exposure_files.values()), [])) == 0)):
         print('no files!')
         return None
 
@@ -203,7 +203,6 @@ def buildtable(exposure_files, filetype, dithertype,
             raise ValueError('weird undither fa file?')
 
     for i, (expid, exfiles) in enumerate(exposure_files.items()):
-        specflux_b, specflux_r, specflux_z = [], [], []
         tab = None
 
         if len(exfiles) == 0:
@@ -212,7 +211,7 @@ def buildtable(exposure_files, filetype, dithertype,
         if verbose >= 1:
             print(expid)
         if ((verbose >= 1) and (dithertype == 'telescope') and
-            (lookup_wcs is None or centralwcs is None)):
+                (lookup_wcs is None or centralwcs is None)):
             print('Ignoring any intentional telescope offset...')
         for exfile in exfiles:
             if verbose >= 2:
@@ -252,7 +251,7 @@ def buildtable(exposure_files, filetype, dithertype,
                               np.arange(len(ditherfa))):
                     raise ValueError('weird fiberassign file')
                 fibermap = ditherfa[fibermap['fiber']]
-                        
+
             exptime = fluxhead['EXPTIME']
             target_id = fibermap['TARGETID']
             target_ra = fibermap['TARGET_RA']
@@ -295,13 +294,13 @@ def buildtable(exposure_files, filetype, dithertype,
                     wcs = lookup_wcs(mjd)
                     wind = usewcspair
                     if (~np.isfinite(centralwcs['cenra'][wind]) or
-                        ~np.isfinite(centralwcs['cendec'][wind])):
+                            ~np.isfinite(centralwcs['cendec'][wind])):
                         raise ValueError('central ra/dec is NaN!')
                     dtelra = (wcs['cenra'][wind]-centralwcs['cenra'][wind])
                     dtelra *= np.cos(np.radians(centralwcs['cendec'][wind]))
                     dteldec = wcs['cendec'][wind]-centralwcs['cendec'][wind]
-                    dra += dtelra*60*60
-                    ddec += dteldec*60*60
+                    dra = dfiberra + dtelra*60*60
+                    ddec = dfiberdec + dteldec*60*60
                     if np.all(~np.isfinite(dra)):
                         print('warning: no good telescope offset, %s' %
                               exfile)
@@ -314,7 +313,7 @@ def buildtable(exposure_files, filetype, dithertype,
                 # today, we need only deal with the former case.
                 if unditherfa is None:
                     raise ValueError('not implemented')
-                
+
                 dithra = target_ra
                 dithdec = target_dec
                 udithra = unditherfa['target_ra'][fiber]
@@ -369,8 +368,32 @@ def buildtable(exposure_files, filetype, dithertype,
                        'SPECTROFLUX', 'SPECTROFLUX_IVAR', 'CAMERA',
                        'DELTA_X_ARCSEC', 'DELTA_Y_ARCSEC',
                        'XFOCAL', 'YFOCAL'),
-                meta={'EXTNAME' : 'DITHER',
-                      'TILEID' : '{}'.format(tileid)})
+                meta={'EXTNAME': 'DITHER',
+                      'TILEID': '{}'.format(tileid)})
+    if correct_area:
+        rad = np.hypot(tab['XFOCAL'], tab['YFOCAL'])
+        platescale = desimodel.io.load_platescale()
+        radialrad = 107/2./np.interp(rad, platescale['radius'],
+                                     platescale['radial_platescale'])
+        azrad = 107/2./np.interp(rad, platescale['radius'],
+                                 platescale['az_platescale'])
+        fiber_area = radialrad*azrad
+        # flat field has average correction of 1.
+        # what radius does this correspond to?
+        # the flat field is partially a measurement of fiber sky area.
+        # i.e., 1/(azrad*radialrad)
+        # so this is dividing by the mean 1/(azrad*radialrad)
+        # this corresponds to a radius of 282.36 mm, just numerically playing
+        # around with  platescale.
+        nominal_radius = 282.36
+        radialradcen = 107/2./np.interp(nominal_radius, platescale['radius'],
+                                        platescale['radial_platescale'])
+        azradcen = 107/2./np.interp(nominal_radius, platescale['radius'],
+                                    platescale['az_platescale'])
+        fiber_area_cen = radialradcen * azradcen
+        tab['SPECTROFLUX'] = tab['SPECTROFLUX'] * (fiber_area / fiber_area_cen)
+        tab['SPECTROFLUX_IVAR'] = (
+            tab['SPECTROFLUX_IVAR'] / (fiber_area / fiber_area_cen)**2)
 
     return tab
 
@@ -391,7 +414,7 @@ def getfilenames(expid, date, filetype, location):
         if location == 'nersc':
             prefix = '/global/project/projectdirs/desi/spectro/nightwatch/kpno'
         elif location == 'kpno':
-            prefix = '/exposures/desi' # not correct path!
+            prefix = '/exposures/desi'  # not correct path!
         else:
             raise ValueError('Unknown location {}'.format(location))
     elif filetype == 'redux':
@@ -401,8 +424,10 @@ def getfilenames(expid, date, filetype, location):
             prefix = '/global/project/projectdirs/desi/spectro/redux/daily/exposures'
         elif location == 'nersc_dither':
             prefix = '/global/project/projectdirs/desi/spectro/redux/dither/exposures'
+        elif location == 'nersc_andes':
+            prefix = '/global/cfs/cdirs/desi/spectro/redux/andes/exposures'
         elif location == 'kpno':
-            prefix = '/exposures/desi' # not correct path!
+            prefix = '/exposures/desi'  # not correct path!
         else:
             raise ValueError('Unknown location {}'.format(location))
     else:

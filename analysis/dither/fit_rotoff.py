@@ -5,6 +5,7 @@ from astropy.io import ascii
 import desimeter
 import argparse
 
+
 def lb2tan(l, b, lcen=None, bcen=None):
     up = np.array([0, 0, 1])
     uv = lb2uv(l, b)
@@ -43,8 +44,8 @@ def uv2lb(uv):
 def uv2tp(uv):
     norm = np.sqrt(np.sum(uv**2., axis=1))
     uv = uv / norm.reshape(-1, 1)
-    t = np.arccos(uv[:,2])
-    p = np.arctan2(uv[:,1], uv[:,0])
+    t = np.arccos(uv[:, 2])
+    p = np.arctan2(uv[:, 1], uv[:, 0])
     return t, p
 
 
@@ -52,8 +53,8 @@ def tp2uv(t, p):
     z = np.cos(t)
     x = np.cos(p)*np.sin(t)
     y = np.sin(p)*np.sin(t)
-    return np.concatenate([q[...,np.newaxis] for q in (x, y, z)],
-                             axis=-1)
+    return np.concatenate([q[..., np.newaxis] for q in (x, y, z)],
+                          axis=-1)
 
 
 def mjd2lst(mjd, lng):
@@ -62,11 +63,11 @@ def mjd2lst(mjd, lng):
 
     mjdstart = 2400000.5
     jd = mjd + mjdstart
-    c = [280.46061837, 360.98564736629, 0.000387933, 38710000.0 ]
+    c = [280.46061837, 360.98564736629, 0.000387933, 38710000.0]
     jd2000 = 2451545.0
     t0 = jd - jd2000
     t = t0/36525.
-    theta = c[0] + (c[1] * t0) + t**2*(c[2] - t/ c[3] )
+    theta = c[0] + (c[1] * t0) + t**2*(c[2] - t/c[3])
     lst = (theta + lng)/15.
     lst = lst % 24.
     return lst
@@ -74,10 +75,8 @@ def mjd2lst(mjd, lng):
 
 def match(a, b):
     sa = np.argsort(a)
-    sb = np.argsort(b)
     ua = np.unique(a)
-    ub = np.unique(b)
-    if len(ua) != len(a):# or len(ub) != len(b):
+    if len(ua) != len(a):
         raise ValueError('All keys in a must be unique.')
     ind = np.searchsorted(a[sa], b)
     m = (ind >= 0) & (ind < len(a))
@@ -112,8 +111,8 @@ def read_gfa(fn=None, detailed=True):
     guiders = ['GUIDE%d' % i for i in [0, 2, 3, 5, 7, 8]]
     from astropy.wcs import WCS
     out = np.zeros(len(guiders), dtype=[('RA', 'f8'), ('DEC', 'f8'),
-                                           ('X', 'f8'), ('Y', 'f8'),
-                                           ('GFA_LOC', 'i4')])
+                                        ('X', 'f8'), ('Y', 'f8'),
+                                        ('GFA_LOC', 'i4')])
     if fn is None:
         average = True
         fn = os.path.join(os.environ['GFA_REDUCE_ETC'],
@@ -165,6 +164,7 @@ def read_fp():
 def fit_points(x1, y1, x2, y2):
     c1 = np.array([x1, y1]).T
     c2 = np.array([x2, y2]).T
+
     def chi(par):
         return (c1-transform(par, c2)).reshape(-1)
     from scipy.optimize import leastsq
@@ -307,7 +307,6 @@ def fit_rotoff(fvcfn, coordfn, fafn, gfafn, verbose=True):
               f'rotation:{rot:+7.3f} deg ({rot*60*60:+7.1f} arcsec)')
     return ((xgfatanfa, ygfatanfa), (xgfatanmeas, ygfatanmeas),
             (xmod, ymod), res)
-
 
 
 if __name__ == '__main__':
