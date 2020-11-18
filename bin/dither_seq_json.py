@@ -188,6 +188,7 @@ def setup_fibermode(args):
                             'guider_exptime'      : 5.0,
                             'acquisition_exptime' : 15.0,
                             'fvc_exptime'         : 2.0,
+# Remove (SB, 2020/10/28)
 #                            'usespectrographs'    : True,
 #                            'stop_guiderloop_when_done' : True,
 #                            'passthru'            : passthru,
@@ -207,7 +208,10 @@ def setup_fibermode(args):
 #        dith_script.append({'sequence'         : 'Break'})
 
     # Dump JSON DESI + spectrograph list into a file.
-    dith_filename = 'dithseq_fibermode_{:06d}_{:06d}.json'.format(minid, maxid)
+    if args.pause > 0:
+        dith_filename = 'dithseq_fibermode_{:06d}_{:06d}_pause.json'.format(minid, maxid)
+    else:
+        dith_filename = 'dithseq_fibermode_{:06d}_{:06d}.json'.format(minid, maxid)
     json.dump(dith_script, open(dith_filename, 'w'), indent=4)
     log.info('Use {} in the DESI observer console.'.format(dith_filename))
 
