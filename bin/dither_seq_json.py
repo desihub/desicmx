@@ -22,7 +22,7 @@ import logging as log
 import numpy as np
 from astropy import units as u
 from astropy.io import fits
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 def get_tile_coords(tileid, dryrun=False):
     """Open fiberassign file and read tile location.
@@ -52,7 +52,8 @@ def get_tile_coords(tileid, dryrun=False):
         path = '/data/tiles/ALL_tiles/20191119'
         log.warning('DOS_DESI_TILES undefined; using {}'.format(path))
 
-    fibfile = '/'.join([path, 'fiberassign-{:06d}.fits'.format(tileid)])
+    # Warning (SB): subfolder in DOS_DESI_TILES likely to change.
+    fibfile = '/'.join([path, '063', 'fiberassign-{:06d}.fits'.format(tileid)])
     try:
         hdus = fits.open(fibfile)
     except FileNotFoundError as e:
@@ -181,17 +182,24 @@ def setup_fibermode(args):
 
         # Stack up DESI sequences. Note: exptime is for spectrographs.
         dith_script.append({'sequence'            : 'DESI',
-                            'flavor'              : 'science',
                             'obstype'             : 'SCIENCE',
                             'fiberassign'         : tile_id,
-                            'exptime'             : 60.0,
+                            'exptime'             : args.exptime,
                             'guider_exptime'      : 5.0,
                             'acquisition_exptime' : 15.0,
                             'fvc_exptime'         : 2.0,
-                            'usespectrographs'    : True,
-                            'stop_guiderloop_when_done' : True,
-                            'passthru'            : passthru,
+# Remove (SB, 2020/10/28)
+#                            'usespectrographs'    : True,
+#                            'stop_guiderloop_when_done' : True,
+#                            'passthru'            : passthru,
                             'program'             : 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
+        # add 1 min pause for cool down
+        if args.pause > 0:
+            if tile_id != maxid:
+                dith_script.append({'sequence'            : 'Action',
+                                    'action'              : 'pause',
+                                    'required'            : ['SPECTRO', 'CCDS'],
+                                    'delay'               : args.pause})
 
 #        if i > 0:
 #            dith_script[-1]['correct_for_adc'] = False
@@ -200,14 +208,18 @@ def setup_fibermode(args):
 #        dith_script.append({'sequence'         : 'Break'})
 
     # Dump JSON DESI + spectrograph list into a file.
-    dith_filename = 'dithseq_fibermode_{:06d}_{:06d}.json'.format(minid, maxid)
+    if args.pause > 0:
+        dith_filename = 'dithseq_fibermode_{:06d}_{:06d}_pause.json'.format(minid, maxid)
+    else:
+        dith_filename = 'dithseq_fibermode_{:06d}_{:06d}.json'.format(minid, maxid)
     json.dump(dith_script, open(dith_filename, 'w'), indent=4)
     log.info('Use {} in the DESI observer console.'.format(dith_filename))
 
 
 if __name__ == '__main__':
     # Main options specified before rastermode and fibermode subcommands.
-    p = ArgumentParser(description='Raster/fiber dithering JSON ICS setup program')
+    p = ArgumentParser(description='Raster/fiber dithering JSON ICS setup program',
+                       formatter_class=ArgumentDefaultsHelpFormatter)
     p.add_argument('-d', '--dryrun', action='store_true', default=False,
                    help='Dry run: do not check for fiberassign files')
     p.add_argument('-v', '--verbose', action='store_true', default=False,
@@ -217,7 +229,8 @@ if __name__ == '__main__':
                           help='additional help')
 
     # Raster mode: move telescope boresight with deltara/deltadec
-    prmode = sp.add_parser('rastermode', help='Telescope raster program')
+    prmode = sp.add_parser('rastermode', formatter_class=ArgumentDefaultsHelpFormatter,
+                          help='Telescope raster program')
     prmode.add_argument('-t', '--tileid', required=True, type=int,
                         help='Tile ID used for raster')
     prmode.add_argument('-s', '--step', required=True, type=float,
@@ -233,9 +246,14 @@ if __name__ == '__main__':
     prmode.set_defaults(func=setup_rastermode)
 
     # Fiber mode: set up a sequence of fiberassign tiles.
-    pfmode = sp.add_parser('fibermode', help='Fiber dither program')
+    pfmode = sp.add_parser('fibermode', formatter_class=ArgumentDefaultsHelpFormatter,
+                           help='Fiber dither program')
     pfmode.add_argument('-t', '--tilerange', required=True, nargs=2, type=int,
                         help='Min/max tile ID for positioners')
+    pfmode.add_argument('-e', '--exptime', type=float, default=90.0,
+                        help='Exposure time [seconds]')
+    pfmode.add_argument('-p', '--pause', type=float, default=0.0,
+                        help='Pause for cooldown [seconds]')
     pfmode.set_defaults(func=setup_fibermode)
 
     args = p.parse_args()
