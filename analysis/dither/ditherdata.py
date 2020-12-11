@@ -182,7 +182,7 @@ def rearrange_table(table):
 
 def buildtable(exposure_files, filetype, dithertype,
                unditherfa=None, ditherfa=None,
-               centralwcs=None, lookup_wcs=None, tileid=0,
+               centralwcs=None, lookup_wcs=None,
                verbose=1, usewcspair=1, rawdir=None, correct_area=True):
     """Loop through the exposure list and construct an observation
     table."""
@@ -368,8 +368,8 @@ def buildtable(exposure_files, filetype, dithertype,
                        'SPECTROFLUX', 'SPECTROFLUX_IVAR', 'CAMERA',
                        'DELTA_X_ARCSEC', 'DELTA_Y_ARCSEC',
                        'XFOCAL', 'YFOCAL'),
-                meta={'EXTNAME': 'DITHER',
-                      'TILEID': '{}'.format(tileid)})
+                meta={'EXTNAME': 'DITHER'})
+
     if correct_area:
         rad = np.hypot(tab['XFOCAL'], tab['YFOCAL'])
         platescale = desimodel.io.load_platescale()
@@ -441,3 +441,29 @@ def getfilenames(expid, date, filetype, location):
         exfiles[ex] = files
 
     return exfiles
+
+
+def write_table(table, fn):
+    for i, f in enumerate('BRZ'):
+        if i == 0:
+            fits.writeto(fn, Table(table[f]).as_array(),
+                         header=fits.Header(dict(EXTNAME=f)))
+        else:
+            fits.append(fn, Table(table[f]).as_array(),
+                        header=fits.Header(dict(EXTNAME=f)))
+
+
+def read_table(fn):
+    out = dict()
+    for camera in 'BRZ':
+        tab = fits.getdata(fn, camera)
+        # I am rueing this choice of data format.
+        newshape = tab['expid'].shape
+        newdtype = []
+        for f in tab.dtype.names:
+            newdtype.append((f, tab[f].dtype.descr[0][1]))
+        newtab = np.zeros(newshape, dtype=newdtype)
+        for f in tab.dtype.names:
+            newtab[f] = tab[f]
+        out[camera] = newtab
+    return out

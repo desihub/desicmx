@@ -96,27 +96,34 @@ class SimplePSF(object):
         self.psfparam = psfparam
         self.psffun = psffun
 
-    def fiberfrac(self, x, y, dx, dy):
+    def fiberfrac(self, x, y, dx, dy, focus):
         return self.psffun(dx, dy, x, y, *self.psfparam)
 
 
 # let's say measurements are an n_fib x n_exp array
-def model_flux(data, starflux, dx, dy, psf, transparency):
+def model_flux(data, starflux, dx, dy, psf, transparency, dz=None):
     if not isinstance(psf, list):
         psf = [psf]
+    if dz is None:
+        dz = dx*0
     fiberfracs = np.array(
         [psf0.fiberfrac(data['xfocal'][:, i], data['yfocal'][:, i],
-                        dx[:, i], dy[:, i])
+                        dx[:, i], dy[:, i], dz[:, i])
          for (i, psf0) in enumerate(psf)]).T
     fluxes = fiberfracs*transparency.reshape(1, -1)*starflux.reshape(-1, 1)
     return fluxes
 
 
 def model_flux_full(data, starflux, xfiboff, yfiboff, xtel, ytel, psf,
-                    transparency):
+                    transparency, zfiboff=None, focus=None):
     dx = xfiboff.reshape(-1, 1) + data['delta_x_arcsec'] + xtel.reshape(1, -1)
     dy = yfiboff.reshape(-1, 1) + data['delta_y_arcsec'] + ytel.reshape(1, -1)
-    flux = model_flux(data, starflux, dx, dy, psf, transparency)
+    dz = None
+    if zfiboff is not None:
+        dz = (zfiboff.reshape(-1, 1) + 0*data['delta_x_arcsec'] +
+              focus.reshape(1, -1))
+    flux = model_flux(data, starflux, dx, dy, psf, transparency,
+                      dz=dz)
     return flux
 
 
@@ -220,44 +227,59 @@ def fit_all(data, guessflux, psffun=SimplePSF,
 
 def chi_image(param, data=None, dflux=None, starflux=None,
               xfiboff=None, yfiboff=None, psffun=SimplePSF,
-              **extra):
+              zfiboff=None, **extra):
+    if zfiboff is not None:
+        focus = param[-1]
+        param = param[:-1]
+    else:
+        focus = None
     xtel = param[0:1]
     ytel = param[1:2]
     transparency = param[2:3]
     psfparam = param[3:]
     psf = psffun(psfparam)  # makes the PSF object
     modflux = model_flux_full(data, starflux, xfiboff, yfiboff,
-                              xtel, ytel, psf, transparency)
+                              xtel, ytel, psf, transparency, zfiboff=zfiboff,
+                              focus=focus)
     # add some really weak priors
-    weakpriors = np.hstack([xtel/3600, ytel/3600,
-                            (transparency-0.4)/100,
-                            psfparam/100])
+    weakpriors = [xtel/3600, ytel/3600,
+                  (transparency-0.4)/100,
+                  psfparam/100]
+    if zfiboff is not None:
+        weakpriors = weakpriors + [focus / 1000]
+    weakpriors = np.hstack(weakpriors)
     chi = (data['spectroflux']-modflux)*np.sqrt(data['spectroflux_ivar'])
     return np.concatenate([chi.reshape(-1), weakpriors.reshape(-1)])
 
 
 def chi_fiber(param, data=None,
-              xtel=None, ytel=None, psf=None, transparency=None, **extra):
+              xtel=None, ytel=None, psf=None, transparency=None,
+              focus=None, **extra):
     starflux = param[0:1]
     xfiboff = param[1:2]
     yfiboff = param[2:3]
+    if focus is not None:
+        zfiboff = param[3:4]
+    else:
+        zfiboff = None
     modflux = model_flux_full(data, starflux, xfiboff, yfiboff,
-                              xtel, ytel, psf, transparency)
+                              xtel, ytel, psf, transparency,
+                              zfiboff=zfiboff, focus=focus)
     # add some really weak priors
     weakpriors = np.array([xfiboff/100, yfiboff/100, starflux/10**6])
     chi = (data['spectroflux']-modflux)*np.sqrt(data['spectroflux_ivar'])
     return np.concatenate([chi.reshape(-1), weakpriors.reshape(-1)])
 
 
-def fit_one_image(i, data, starflux, xfiboff, yfiboff, psffun, guess):
-
+def fit_one_image(i, data, starflux, xfiboff, yfiboff, psffun, guess,
+                  zfiboff=None):
     def chi(param, args=None):
         return damper(chi_image(param, **args), 5)
 
     nfiber, nexp = data.shape
     args = dict(data=data[:, i:i+1],
                 starflux=starflux,
-                xfiboff=xfiboff, yfiboff=yfiboff,
+                xfiboff=xfiboff, yfiboff=yfiboff, zfiboff=zfiboff,
                 psffun=psffun)
     res = leastsq(chi, guess[i], args=(args,), full_output=True)
     bestchi = chi(res[0], args=args)[:nfiber]
@@ -269,14 +291,17 @@ def fit_one_image(i, data, starflux, xfiboff, yfiboff, psffun, guess):
 # find the set of image parameters (xtel, ytel, fwhm, transparency)
 # that lead model_flux_full to most closely approximate flux
 # flux, dflux are n_fib x n_exp
-def fit_images(data, starflux,
-               xfiboff, yfiboff, psffun=None, guess=None, truth=None,
-               pool=None):
-
+def fit_images(data, starflux, xfiboff, yfiboff,
+               psffun=None, guess=None,
+               zfiboff=None,
+               truth=None, pool=None):
     nfiber, nexp = data.shape
     if guess is None:
         nparam = 4  # xtel, ytel, transparency, fwhm, ...
         guess = np.array([0, 0, 1.0, 0.4], dtype='f4')
+        if zfiboff is not None:
+            nparam += 1
+            guess = np.concatenate([guess, [0]])
         guess = guess.reshape(1, -1)*np.ones((nexp, 1), dtype='f4')
     else:
         nparam = guess.shape[1]
@@ -288,6 +313,7 @@ def fit_images(data, starflux,
     import functools
     fit_one = functools.partial(fit_one_image, data=data, starflux=starflux,
                                 xfiboff=xfiboff, yfiboff=yfiboff,
+                                zfiboff=zfiboff,
                                 psffun=psffun, guess=guess)
     if pool is None:
         res = [fit_one(i) for i in range(nexp)]
@@ -303,15 +329,14 @@ def fit_images(data, starflux,
     return outpar, outunc, bestchi
 
 
-def fit_one_fiber(i, data, xtel, ytel, psf, transparency, guess):
-
+def fit_one_fiber(i, data, xtel, ytel, psf, transparency, guess, focus=None):
     def chi(param, args=None):
         return damper(chi_fiber(param, **args), 5)
 
     nexp = data.shape[1]
     args = dict(data=data[i:i+1, :],
                 xtel=xtel, ytel=ytel,
-                psf=psf, transparency=transparency)
+                psf=psf, transparency=transparency, focus=focus)
     res = leastsq(chi, guess[i], args=(args,), full_output=True)
     bestchi = chi(res[0], args=args)[:nexp]
     if np.any(~np.isfinite(res[0])):
@@ -323,10 +348,13 @@ def fit_one_fiber(i, data, xtel, ytel, psf, transparency, guess):
 # that lead model_flux_full to most closely approximate flux
 # flux, dflux are n_fib x n_exp
 def fit_fibers(data, xtel, ytel, transparency, *psfparam,
-               psffun=None, guess=None, pool=None):
+               psffun=None, focus=None,
+               guess=None, pool=None):
     import functools
     nfiber, nexp = data.shape
     nparam = 3  # starflux, xfiboff, yfiboff
+    if focus is not None:
+        nparam += 1  # zfiboff
 
     if guess is None:
         guess = np.zeros((nfiber, nparam), dtype='f4')
@@ -338,7 +366,7 @@ def fit_fibers(data, xtel, ytel, transparency, *psfparam,
 
     fit_one = functools.partial(fit_one_fiber, data=data, xtel=xtel,
                                 ytel=ytel, psf=psf, transparency=transparency,
-                                guess=guess)
+                                guess=guess, focus=focus)
 
     if pool is None:
         res = [fit_one(i) for i in range(nfiber)]
@@ -358,7 +386,7 @@ def fake_data(nexp=10, nfiber=5000, mseeing=1.1, devseeing=0.2, meantrans=0.4,
               devtrans=0.01,
               roff=0.2, teloff=0.1, frange=[5000, 10000], pattern='gaussian',
               ditherscale=0.25, psffun=SimplePSF,
-              seed=None, sky=150):
+              seed=None, sky=150, focus=None):
     if seed is not None:
         np.random.seed(seed)
     if pattern == 'gaussian':
@@ -446,7 +474,7 @@ def fake_data(nexp=10, nfiber=5000, mseeing=1.1, devseeing=0.2, meantrans=0.4,
     data['expid'] = np.arange(nexp)[None, :]
     psf = [psffun([fwhm0]) for fwhm0 in fwhm]
     flux = model_flux_full(data, starflux, xfiboff, yfiboff,
-                           xtel, ytel, psf, transparency)
+                           xtel, ytel, psf, transparency, focus=focus)
     if np.any(flux == 0):
         print('warning: some simulated fluxes are zero.')
     dflux = np.sqrt(flux+sky)  # additional noise from sky photons
@@ -460,17 +488,23 @@ def fake_data(nexp=10, nfiber=5000, mseeing=1.1, devseeing=0.2, meantrans=0.4,
 
 def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
                 truth=None, verbose=False, useguess=True,
-                extra_psfparam_guess=None, threads=0):
+                extra_psfparam_guess=None,
+                fit_focus=False, focus_guess=None, threads=0):
     nfib, nexp = data.shape
     if useguess:
-        guess = initial_guess(data, guessflux, psffun)
+        guess = initial_guess(data, guessflux, psffun, fit_focus=fit_focus,
+                              focus_guess=focus_guess)
     else:
-        guess = dict(xfiboff=np.zeros(nfib, dtype='f8'),
-                     yfiboff=np.zeros(nfib, dtype='f8'),
+        guess = dict(xfiboff=np.zeros(nfib, dtype='f4'),
+                     yfiboff=np.zeros(nfib, dtype='f4'),
                      xtel=0,
                      ytel=0,
                      fwhm=1.,
                      transparency=1.)
+        if fit_focus:
+            guess['zfiboff'] = np.zeros(nfib, dtype='f4')
+            guess['focus'] = 0
+
     guessfib = [guessflux, guess['xfiboff'], guess['yfiboff']]
     guessim = [np.ones(nexp, dtype='f4')*guess['xtel'],
                np.ones(nexp, dtype='f4')*guess['ytel'],
@@ -479,6 +513,9 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
     if extra_psfparam_guess is not None:
         guessim += [np.ones(nexp, dtype='f4')*g0
                     for g0 in extra_psfparam_guess]
+    if fit_focus:
+        guessfib += [np.zeros(nfib, dtype='f4')]
+        guessim += [np.zeros(nexp, dtype='f4')]
     guessim = np.array(guessim)
     ndof = nfib*nexp-nexp*4-nfib*3+3
     # trailing +3 intended to account for perfect degeneracy between
@@ -486,10 +523,17 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
 
     if truth is not None:
         psf = [psffun([fwhm0]) for fwhm0 in truth['fwhm']]
+        if fit_focus is not None:
+            focus = truth['focus']
+            zfiboff = truth['zfiboff']
+        else:
+            focus = None
+            zfiboff = None
         fluxtrue = model_flux_full(
             data,
             truth['starflux'], truth['xfiboff'], truth['yfiboff'],
-            truth['xtel'], truth['ytel'], psf, truth['transparency'])
+            truth['xtel'], truth['ytel'], psf, truth['transparency'],
+            zfiboff=zfiboff, focus=focus)
         chitrue = (data['spectroflux']-fluxtrue)*np.sqrt(
             data['spectroflux_ivar'])
         if verbose:
@@ -508,8 +552,15 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
     for i in range(niter):
         if verbose:
             print('Iteration %d' % i)
+        if fit_focus:
+            zfiboff = guessfib[-1]
+            guessfib0 = guessfib[:-1]
+        else:
+            guessfib0 = guessfib
+            zfiboff = None
         impar, imunc, chiim = fit_images(
-            data, *guessfib, guess=guessim.T, psffun=psffun, pool=pool)
+            data, *guessfib0, guess=guessim.T, psffun=psffun, pool=pool,
+            zfiboff=zfiboff)
         guessim = impar.T
         if verbose:
             print('chi2/dof: %f' % (np.sum(chiim**2)/ndof))
@@ -524,10 +575,18 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
         #                   impar[brightestind, 0]),
         #                 -(brightestdat['delta_y_arcsec'] +
         #                   impar[brightestind, 1])]
+        if fit_focus:
+            focus = guessim[-1]
+            guessim0 = guessim[:-1]
+        else:
+            guessim0 = guessim
+            focus = None
         fibpar, fibunc, chifib = fit_fibers(
-            data, *guessim, guess=np.array(guessfib).T, psffun=psffun,
-            pool=pool)
+            data, *guessim0, guess=np.array(guessfib).T, psffun=psffun,
+            pool=pool, focus=focus)
         guessfib = [fibpar[:, 0], fibpar[:, 1], fibpar[:, 2]]
+        if fit_focus:
+            guessfib += [fibpar[:, 3]]
         if verbose:
             print('chi2/dof: %f' % (np.sum(chifib**2)/ndof))
     m = guessflux > 0
@@ -539,6 +598,11 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
     if np.sum(m) < 10:
         m = guessflux > 0
         print('too few bright stars for good zero point.')
+    # absolute zeropointing here
+    # guessflux uses guess_starcounts, which should have absolute zero points
+    # currently assumes that objects are flat spectrum, so that there's
+    # no color correction from the imaging bandpasses to the spectrophotometric
+    # bandpasses.
     zeropoint = np.median(guessfib[0][m]/guessflux[m])
     guessfib[0] /= zeropoint
     guessim[2] *= zeropoint
@@ -548,12 +612,27 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
     guessfib[2] -= medyfib
     guessim[0] += medxfib
     guessim[1] += medyfib
+    if fit_focus:
+        medzfib = np.median(guessfib[3])
+        guessfib[3] -= medzfib
+        guessim[-1] += medzfib
+        psfparam = guessim[3:-1]
+        dpsfparam = imunc[:, 3:-1]
+    else:
+        psfparam = guessim[3:]
+        dpsfparam = imunc[:, 3:]
     chi2fib = np.sum(chifib**2, axis=1)
     chi2fibnull = np.sum(data['spectroflux']**2*data['spectroflux_ivar'],
                          axis=1)
-    psf = [psffun(psfpar) for psfpar in guessim[3:].T]
+    psf = [psffun(psfpar) for psfpar in psfparam.T]
+    if fit_focus:
+        zfiboff = guessfib[3]
+        dzfiboff = fibunc[:, 3]
+        focus = guessim[-1]  # check!
+        dfocus = imunc[:, -1]  # check!
     modflux = model_flux_full(data, guessfib[0], guessfib[1], guessfib[2],
-                              guessim[0], guessim[1], psf, guessim[2])
+                              guessim[0], guessim[1], psf, guessim[2],
+                              zfiboff=zfiboff, focus=focus)
     astodeg = 1/60/60
     if 'target_dec' in data.dtype.names:
         cosdec = np.cos(np.radians(data['target_dec']))
@@ -567,19 +646,25 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
         fiber_ditherfit_ra = data['delta_x_arcsec']*0
         fiber_ditherfit_dec = data['delta_y_arcsec']*0
 
-    return dict(xtel=guessim[0], dxtel=imunc[:, 0],
-                ytel=guessim[1], dytel=imunc[:, 1],
-                transparency=guessim[2], dtransparency=imunc[:, 2],
-                psfparam=guessim[3:], dpsfparam=imunc[:, 3:].T,
-                starflux=guessfib[0], dstarflux=fibunc[:, 0],
-                xfiboff=guessfib[1], dxfiboff=fibunc[:, 1],
-                yfiboff=guessfib[2], dyfiboff=fibunc[:, 2],
-                chi2fib=chi2fib, chi2fibnull=chi2fibnull,
-                guessflux=guessflux, fiber=data['fiber'][:, 0],
-                expid=data['expid'][0, :],
-                fiber_ditherfit_ra=fiber_ditherfit_ra,
-                fiber_ditherfit_dec=fiber_ditherfit_dec,
-                modflux=modflux)
+    out = dict(xtel=guessim[0], dxtel=imunc[:, 0],
+               ytel=guessim[1], dytel=imunc[:, 1],
+               transparency=guessim[2], dtransparency=imunc[:, 2],
+               psfparam=psfparam, dpsfparam=dpsfparam.T,
+               starflux=guessfib[0], dstarflux=fibunc[:, 0],
+               xfiboff=guessfib[1], dxfiboff=fibunc[:, 1],
+               yfiboff=guessfib[2], dyfiboff=fibunc[:, 2],
+               chi2fib=chi2fib, chi2fibnull=chi2fibnull,
+               guessflux=guessflux, fiber=data['fiber'][:, 0],
+               expid=data['expid'][0, :],
+               fiber_ditherfit_ra=fiber_ditherfit_ra,
+               fiber_ditherfit_dec=fiber_ditherfit_dec,
+               modflux=modflux)
+    if fit_focus:
+        out['zfiboff'] = zfiboff
+        out['dzfiboff'] = dzfiboff
+        out['focus'] = focus
+        out['dfocus'] = dfocus
+    return out
 
 
 def test_performance(fluxguessaccuracy=0.2, verbose=False, niter=10,
@@ -701,7 +786,7 @@ class SimpleFiberIntegratedPSF(object):
         self.xint = xx[inellipse]
         self.yint = yy[inellipse]
 
-    def fiberfrac(self, x, y, dx, dy):
+    def fiberfrac(self, x, y, dx, dy, focus):
         """Some explanation for this routine.
 
         If one plots scatter(xint[keep], yint[keep], c=res[keep])
@@ -841,7 +926,13 @@ def fit_dithering_sims(directory, niter=10, psffun=None, verbose=True,
     return out
 
 
-def model_initial_guess(param, data=None, guessflux=None, psffun=None):
+def model_initial_guess(param, data=None, guessflux=None, psffun=None,
+                        fit_focus=False):
+    if fit_focus:
+        focus = param[-1]
+        param = param[:-1]
+    else:
+        focus = None
     xtel, ytel, axx, axy, ayx, ayy, transparency, *psfparam = param
     scalefac = 1.0/400
     # 1" / 400 mm; xfiboff is in arcseconds, xfib is in mm
@@ -854,8 +945,10 @@ def model_initial_guess(param, data=None, guessflux=None, psffun=None):
     nexp = data.shape[1]
     psf = [psffun(psfparam) for i in range(nexp)]
     zero = np.zeros(1, dtype='f4')
+    zfiboff = None if not fit_focus else xfiboff*0
     modflux = model_flux_full(data, guessflux, xfiboff, yfiboff, zero, zero,
-                              psf, transparency)
+                              psf, transparency, zfiboff=zfiboff,
+                              focus=focus)
     return modflux
 
 
@@ -865,14 +958,18 @@ def chi_initial_guess(param, data=None, **kw):
     return chi.reshape(-1)
 
 
-def initial_guess(data, guessflux, psffun, truth=None, epsfcn=1e-4, **kw):
+def initial_guess(data, guessflux, psffun, truth=None, epsfcn=1e-4,
+                  fit_focus=False, focus_guess=None, **kw):
     # initial guess
     # solve for: overall offset, scale, rotation, transparency, fwhm
     # nparam = 2 + 4 + 2
     nfiber, nexp = data['spectroflux'].shape
     # xtel, ytel, axx, axy, ayx, ayy, transparency, fwhm
     guess = [0, 0, 0, 0, 0, 0, 1., 1.]
-    args = dict(data=data, psffun=psffun, guessflux=guessflux)
+    if fit_focus:
+        guess = guess + [np.median(focus_guess)]
+    args = dict(data=data, psffun=psffun, guessflux=guessflux,
+                fit_focus=fit_focus)
 
     def chi(param, args=None):
         chid = damper(chi_initial_guess(param, **args), 5)
@@ -890,6 +987,8 @@ def initial_guess(data, guessflux, psffun, truth=None, epsfcn=1e-4, **kw):
                ayx=param[4], ayy=param[5],
                transparency=param[6], fwhm=param[7],
                xfiboff=xfiboff, yfiboff=yfiboff, chibest=chibest)
+    if fit_focus:
+        out['focus'] = param[8]
     return out
 
 
@@ -1308,21 +1407,20 @@ def fiber_plot(sol, data, i, guess=None, label=False):
     colors = [relflux, relfluxmod, relfluxratio]
     titles = ['data', 'model', 'residuals']
     from matplotlib import ticker
-    tick_locator = ticker.MaxNLocator(nbins=4)
     p.subplots_adjust(wspace=0.05)
     for j in range(3):
         p.subplot(1, 3, j+1)
         p.grid(zorder=0)
         p.scatter(data['delta_x_arcsec'][i, :]+sol['xtel'],
                   data['delta_y_arcsec'][i, :]+sol['ytel'],
-                  c=-2.5*np.log10(colors[j]), zorder=3)
+                  c=-2.5*np.log10(colors[j]), zorder=3, cmap='bwr')
         p.plot(-sol['xfiboff'][i], -sol['yfiboff'][i], 'x', zorder=4)
         if label:
             pad = 0.2
         else:
             pad = 0.15
         cb = p.colorbar(orientation='horizontal', pad=pad)
-        cb.locator = tick_locator
+        cb.locator = ticker.MaxNLocator(nbins=4)
         cb.update_ticks()
         cb.set_label('mag')
         p.xlim(-3, 3)
@@ -1378,9 +1476,11 @@ def process(data, camera, outdir='.', label='dither%s',
     tdata = tdata[camera]
     print('Attempting to solve for %d fibers in %d exposures.' % tdata.shape)
     guess = guess_starcounts(tdata, camera)
-    psffun = partial(SimpleFiberIntegratedPSF, psffun=invariable_moffat,
-                     pixscale=0.1)
-    sol = fit_iterate(tdata, guess, psffun=psffun, verbose=True, niter=niter,
+    if 'psffun' not in kw:
+        kw['psffun'] = partial(SimpleFiberIntegratedPSF,
+                               psffun=invariable_moffat,
+                               pixscale=0.1)
+    sol = fit_iterate(tdata, guess, verbose=True, niter=niter,
                       **kw)
     nfib, nim = tdata.shape
     dtype = []
