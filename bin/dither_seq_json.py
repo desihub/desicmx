@@ -53,7 +53,7 @@ def get_tile_coords(tileid, dryrun=False):
         log.warning('DOS_DESI_TILES undefined; using {}'.format(path))
 
     # Warning (SB): subfolder in DOS_DESI_TILES likely to change.
-    fibfile = '/'.join([path, '063', 'fiberassign-{:06d}.fits'.format(tileid)])
+    fibfile = '/'.join([path, '080', 'fiberassign-{:06d}.fits'.format(tileid)])
     try:
         hdus = fits.open(fibfile)
     except FileNotFoundError as e:
@@ -128,10 +128,10 @@ def setup_rastermode(args):
                             'acquisition_time' : 15.0,
                             'deltara'          : dx.to('arcsec').value,
                             'deltadec'         : dy.to('arcsec').value,
-                            'correct_for_adc'  : False,
-                            'usetemp'          : False,
-                            'uselut'           : False,
-                            'resetrot'         : False,
+#                            'correct_for_adc'  : False,
+#                            'usetemp'          : False,
+#                            'uselut'           : False,
+#                            'resetrot'         : False,
                             'passthru'         : passthru,
                             'program'          : 'Dither tile_id {:05d} ({:g} {:g})'.format(tile_id, ra.to('arcsec').value, dec.to('arcsec').value)})
 
@@ -139,11 +139,11 @@ def setup_rastermode(args):
         dith_script.append({'sequence'         : 'Spectrographs',
                             'flavor'           : 'science',
                             'obstype'          : 'SCIENCE',
-                            'correct_for_adc'  : False,
-                            'usetemp'          : False,
-                            'uselut'           : False,
-                            'resetrot'         : False,
-                            'exptime'          : 60.0,
+#                            'correct_for_adc'  : False,
+#                            'usetemp'          : False,
+#                            'uselut'           : False,
+#                            'resetrot'         : False,
+                            'exptime'          : 90.0,
                             'passthru'         : passthru,
                             'program'          : 'Dither tile_id {:05d} ({:g} {:g})'.format(tile_id, ra.to('arcsec').value, dec.to('arcsec').value)})
 
@@ -182,7 +182,6 @@ def setup_fibermode(args):
 
         # Stack up DESI sequences. Note: exptime is for spectrographs.
         dith_script.append({'sequence'            : 'DESI',
-                            'obstype'             : 'SCIENCE',
                             'fiberassign'         : tile_id,
                             'exptime'             : args.exptime,
                             'guider_exptime'      : 5.0,
