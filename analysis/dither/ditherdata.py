@@ -414,7 +414,7 @@ def getfilenames(expid, date, filetype, location):
         if location == 'nersc':
             prefix = '/global/project/projectdirs/desi/spectro/nightwatch/kpno'
         elif location == 'kpno':
-            prefix = '/exposures/desi'  # not correct path!
+            prefix = '/exposures/nightwatch'
         else:
             raise ValueError('Unknown location {}'.format(location))
     elif filetype == 'redux':

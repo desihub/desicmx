@@ -22,7 +22,7 @@ if __name__ == "__main__":
                                     args.location)
     rawdir = ('/global/cfs/cdirs/desi/spectro/data'
               if args.location == 'nersc'
-              else '/data/dts/exposures')  # can't remember.
+              else '/data/dts/exposures/raw')  # can't remember.
     unditherfapath = os.path.join(rawdir, f'{args.night:8d}',
                                   f'{args.expid[0]:08d}')
     unditherfafn = glob.glob(os.path.join(
