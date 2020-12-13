@@ -1,19 +1,12 @@
 #!/usr/bin/env python
-"""Generate guider and spectrograph ICS sequences for running telescope dither
-tests. Can run in two modes:
+"""Generate ICS DESI sequences for observing Survey Validation tiles, which can
+require long runs of exposurse on the same location. This script lets the
+observer quickly adjust the length and nubmer of exposures and specify the
+observing program information.
 
-1. rastermode, which will move the telescope boresight given a tile ID and step
-size. One can specify an offset of the raster center from the current location;
-the script will return to the current location at the end. And the labels on
-the raster positions will be relative to the current location. This is so that
-one can do multiple rasters in the same coordinate system.
+See additional details at
 
-2. fibermode, which will move the positioners given a range of consecutive tile
-IDs.  
-
-Based on instructions available at
-
-https://desi.lbl.gov/trac/wiki/DESIOperations/DithSeq
+https://desi.lbl.gov/trac/wiki/DESIOperations/SVSeq
 """
 
 import os
