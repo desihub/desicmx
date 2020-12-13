@@ -60,6 +60,7 @@ def get_tile_coords(tileid, dryrun=False):
         log.error('TILE {} cannot be found.\n{}.'.format(tileid, e))
         raise SystemExit
 
+    log.debug('Reading {}'.format(fibfile))
     header = hdus['PRIMARY'].header
     ra, dec = header['TILERA'], header['TILEDEC']
     return ra, dec
@@ -104,9 +105,9 @@ def setup_sequence(args):
                            'program'             : 'SV{:d} {} tile {:d}'.format(sv_version, tile_type, tile_id)})
 
     # Dump JSON DESI sequence list into a file.
-    filename = 'seq_SV{:d}_{}_tile{:06d}_{:d}x{:.0f}s.json'.format(sv_version,
-        tile_type.replace('+','_').replace('*','_'),
+    filename = 'seq_SV{:d}_tile{:06d}_{}_{:d}x{:.0f}s.json'.format(sv_version,
         tile_id,
+        tile_type.replace('+','_').replace('*','_'),
         args.nexposures,
         args.exptime,
         )
@@ -130,7 +131,7 @@ if __name__ == '__main__':
     p.add_argument('-s', '--svversion', type=int, default=1,
                    help='Survey Validation version ID.')
     p.add_argument('-t', '--tiletype', required=True,
-                   help='QSO+LRG, ELG, BGS.')
+                   help='QSO+LRG, ELG, BGS+MWS.')
     p.add_argument('tile_id', nargs=1, type=int,
                    help='Tile ID for a sequence of SV[n] exposures.')
     p.set_defaults(func=setup_sequence)
