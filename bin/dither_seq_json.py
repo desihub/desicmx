@@ -180,6 +180,12 @@ def setup_fibermode(args):
         # Logging variables sent to ICS for output to FITS headers:
         passthru = '{{ TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format(tile_id, tile_ra, tile_dec)
 
+        # Program name. Note that first tile/exposure is undithered.
+        if i == 0:
+            prog = 'Dither fibermode undithered tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
+        else:
+            prog = 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
+
         # Stack up DESI sequences. Note: exptime is for spectrographs.
         dith_script.append({'sequence'            : 'DESI',
                             'fiberassign'         : tile_id,
@@ -187,10 +193,6 @@ def setup_fibermode(args):
                             'guider_exptime'      : 5.0,
                             'acquisition_exptime' : 15.0,
                             'fvc_exptime'         : 2.0,
-# Remove (SB, 2020/10/28)
-#                            'usespectrographs'    : True,
-#                            'stop_guiderloop_when_done' : True,
-#                            'passthru'            : passthru,
                             'program'             : 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
         # add 1 min pause for cool down
         if args.pause > 0:
