@@ -102,7 +102,7 @@ def setup_sequence(args):
                            'usedonut'            : True,
                            'focus_exptime'       : 60.0,
                            'sky_exptime'         : 60.0,
-                           'program'             : 'SV{:d} {} tile {:d}'.format(sv_version, tile_type, tile_id)})
+                           'program'             : 'SV{:d} {} tile {:d} ({:g}, {:g})'.format(sv_version, tile_type, tile_id, tile_ra, tile_dec)})
 
     # Dump JSON DESI sequence list into a file.
     filename = 'seq_SV{:d}_tile{:06d}_{}_{:d}x{:.0f}s.json'.format(sv_version,
