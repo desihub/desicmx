@@ -24,8 +24,8 @@ from astropy import units as u
 from astropy.io import fits
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
-def get_tile_coords(tileid, dryrun=False):
-    """Open fiberassign file and read tile location.
+def get_tile_info(tileid, dryrun=False):
+    """Open fiberassign header and read tile info.
 
     Parameters
     ----------
@@ -40,10 +40,12 @@ def get_tile_coords(tileid, dryrun=False):
         Boresight RA for this tile.
     dec : float
         Boresight declination for this tile.
+    isdith : bool
+        True if fiber positions have been dithered.
     """
 
     if dryrun:
-        return 0., 0.
+        return 0., 0., True
 
     if 'DOS_DESI_TILES' in os.environ:
         path = os.environ['DOS_DESI_TILES']
@@ -62,7 +64,15 @@ def get_tile_coords(tileid, dryrun=False):
 
     header = hdus['PRIMARY'].header
     ra, dec = header['TILERA'], header['TILEDEC']
-    return ra, dec
+
+    try:
+        isdith = header['ISDITH']
+    except KeyError as e:
+        print(e)
+        print('Use ISDITH=True')
+        isdith = True
+
+    return ra, dec, isdith
 
 
 def setup_rastermode(args):
@@ -82,7 +92,7 @@ def setup_rastermode(args):
     # Set step size. Add a unit from astropy, does not change value.
     step = args.step*u.arcsec
     tile_id = args.tileid
-    tile_ra, tile_dec = get_tile_coords(tile_id, args.dryrun)
+    tile_ra, tile_dec, tile_dith = get_tile_info(tile_id, args.dryrun)
 
     # Standard raster: 3x3 with 3 visits to (0,0), 11 exposures total.
     if args.pattern == '3x3':
@@ -174,17 +184,21 @@ def setup_fibermode(args):
     log.debug('{:>7s} {:>7s} {:>7s}'.format('Tile', 'RA', 'Dec'))
 
     for i, tile_id in enumerate(tile_ids):
-        tile_ra, tile_dec = get_tile_coords(tile_id, args.dryrun)
+        tile_ra, tile_dec, tile_dith = get_tile_info(tile_id, args.dryrun)
+        if args.dryrun:
+            if i == 0:
+                tile_dith = False
+
         log.debug('{:7d} {:7g} {:7g}'.format(tile_id, tile_ra, tile_dec))
 
         # Logging variables sent to ICS for output to FITS headers:
         passthru = '{{ TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format(tile_id, tile_ra, tile_dec)
 
         # Program name. Note that first tile/exposure is undithered.
-        if i == 0:
-            prog = 'Dither fibermode undithered tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
+        if tile_dith:
+            prog = 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
         else:
-            prog = 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
+            prog = 'Dither fibermode undithered tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
 
         # Stack up DESI sequences. Note: exptime is for spectrographs.
         dith_script.append({'sequence'            : 'DESI',
@@ -193,7 +207,7 @@ def setup_fibermode(args):
                             'guider_exptime'      : 5.0,
                             'acquisition_exptime' : 15.0,
                             'fvc_exptime'         : 2.0,
-                            'program'             : 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)})
+                            'program'             : prog})
         # add 1 min pause for cool down
         if args.pause > 0:
             if tile_id != maxid:
