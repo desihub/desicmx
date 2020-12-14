@@ -207,6 +207,7 @@ def setup_fibermode(args):
                             'guider_exptime'      : 5.0,
                             'acquisition_exptime' : 15.0,
                             'fvc_exptime'         : 2.0,
+                            'movedelay'           : args.movedelay,
                             'program'             : prog})
         # add 1 min pause for cool down
         if args.pause > 0:
@@ -267,6 +268,8 @@ if __name__ == '__main__':
                         help='Min/max tile ID for positioners')
     pfmode.add_argument('-e', '--exptime', type=float, default=90.0,
                         help='Exposure time [seconds]')
+    pfmode.add_argument('-m', '--movedelay', type=float, default=0.0,
+                        help='Move delay [seconds]')
     pfmode.add_argument('-p', '--pause', type=float, default=0.0,
                         help='Pause for cooldown [seconds]')
     pfmode.set_defaults(func=setup_fibermode)
