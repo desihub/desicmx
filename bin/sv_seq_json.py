@@ -59,6 +59,17 @@ def get_tile_coords(tileid, dryrun=False):
     return ra, dec
 
 
+def is_bright(tile_type):
+    """Set up and write out JSON script for an SV observing sequence.
+
+    Parameters
+    ----------
+    tile_type : str
+        A tile type string such as ELG, QSO+LRG, BGS+MWS, etc.
+    """
+    return 'BGS' in tile_type.upper() or 'MWS' in tile_type.upper() or 'BRIGHT' in tile_type.upper()
+
+
 def setup_sequence(args):
     """Set up and write out JSON script for an SV observing sequence.
 
@@ -73,6 +84,12 @@ def setup_sequence(args):
     tile_id = args.tile_id[0]
     sv_version = args.svversion
     tile_type = args.tiletype
+
+    if is_bright(tile_type):
+        if args.exptime > 300. and not args.override_bright:
+            raise ValueError('CAUTION: attempted >300 s exposure for a BRIGHT tile!\n'
+                             'If desired, enable with --override-bright')
+
 
     log.debug('{:>7s} {:>7s} {:>7s}'.format('Tile', 'RA', 'Dec'))
 
@@ -100,7 +117,7 @@ def setup_sequence(args):
     # Dump JSON DESI sequence list into a file.
     filename = 'seq_SV{:d}_tile{:06d}_{}_{:d}x{:.0f}s.json'.format(sv_version,
         tile_id,
-        tile_type.replace('+','_').replace('*','_'),
+        tile_type.replace('+','_').replace('*','_').replace(' ','_'),
         args.nexposures,
         args.exptime,
         )
@@ -125,6 +142,8 @@ if __name__ == '__main__':
                    help='Survey Validation version ID.')
     p.add_argument('-t', '--tiletype', required=True,
                    help='QSO+LRG, ELG, BGS+MWS.')
+    p.add_argument('--override-bright', dest='override_bright', action='store_true',
+                   help='Override bright time exposure restriction.')
     p.add_argument('tile_id', nargs=1, type=int,
                    help='Tile ID for a sequence of SV[n] exposures.')
     p.set_defaults(func=setup_sequence)
