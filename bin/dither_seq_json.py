@@ -196,25 +196,70 @@ def setup_fibermode(args):
 
         # Logging variables sent to ICS for output to FITS headers:
         passthru = '{{ TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format(tile_id, tile_ra, tile_dec)
+        
+        isfocus = args.defocus is not None and tile_flav.lower()=='dithfocus'
+        if isfocus:
+            log.debug('Tile {} is a focus dither tile'.format(tile_id))
 
         # Program name. Note that first tile/exposure is undithered.
         if tile_dith:
-            prog = 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
+            if isfocus:
+                prog = 'Focus dither tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
+            else:
+                prog = 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
         else:
-            prog = 'Dither fibermode undithered tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
+            if isfocus:
+                prog = 'Focus dither undithered tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
+            else:
+                prog = 'Dither fibermode undithered tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
 
-        # Stack up DESI sequences. Note: exptime is for spectrographs.
-        dith_script.append({'sequence'            : 'DESI',
-                            'fiberassign'         : tile_id,
-                            'exptime'             : args.exptime,
-                            'guider_exptime'      : 5.0,
-                            'acquisition_exptime' : 15.0,
-                            'fvc_exptime'         : 2.0,
-                            'sky_exptime'         : args.skyexptime,
-                            'focus_exptime'       : args.focusexptime,
-                            'movedelay'           : args.movedelay,
-                            'program'             : prog})
-        # add 1 min pause for cool down
+        if isfocus:
+            # Set up focus dither tiles as follows:
+            # 1. DESI seq to acquire the tile with no spectrograph exposure.
+            dith_script.append({'sequence'            : 'DESI',
+                                'fiberassign'         : tile_id,
+                                'exptime'             : args.exptime,
+                                'guider_exptime'      : 5.0,
+                                'acquisition_exptime' : 15.0,
+                                'fvc_exptime'         : 2.0,
+                                'sky_exptime'         : args.skyexptime,
+                                'focus_exptime'       : args.focusexptime,
+                                'movedelay'           : args.movedelay,
+                                'usespectrographs'    : False,
+                                'program'             : 'Acquire focus dither tile {}'.format(tile_id)})
+            # 2. Turn off guiding.
+            dith_script.append({'sequence'            : 'Action',
+                                'action'              : 'stoploops',
+                                'loops'               : 'guiding'})
+            # 3. Change the relative focus by the argument 'defocus'.
+            dith_script.append({'sequence'            : 'Action',
+                                'action'              : 'slew',
+                                'focus'               : args.defocus})
+            # 4. Expose the spectrographs.
+            dith_script.append({'sequence'            : 'Spectrographs',
+                                'flavor'              : 'science',
+                                'exptime'             : args.exptime,
+                                'correct_for_adc'     : False,
+                                'usetemp'             : False,
+                                'uselut'              : False,
+                                'program'             : prog})
+            # 5. Return the focus to its original location.
+            dith_script.append({'sequence'            : 'Action',
+                                'action'              : 'slew',
+                                'focus'               : -args.defocus})
+        else:
+            # Stack up DESI sequences. Note: exptime is for spectrographs.
+            dith_script.append({'sequence'            : 'DESI',
+                                'fiberassign'         : tile_id,
+                                'exptime'             : args.exptime,
+                                'guider_exptime'      : 5.0,
+                                'acquisition_exptime' : 15.0,
+                                'fvc_exptime'         : 2.0,
+                                'sky_exptime'         : args.skyexptime,
+                                'focus_exptime'       : args.focusexptime,
+                                'movedelay'           : args.movedelay,
+                                'program'             : prog})
+            # add 1 min pause for cool down
         if args.pause > 0:
             if tile_id != maxid:
                 dith_script.append({'sequence'            : 'Action',
@@ -222,17 +267,15 @@ def setup_fibermode(args):
                                     'required'            : ['SPECTRO', 'CCDS'],
                                     'delay'               : args.pause})
 
-#        if i > 0:
-#            dith_script[-1]['correct_for_adc'] = False
-#
-#        # Break needed to manually stop guiding?
-#        dith_script.append({'sequence'         : 'Break'})
-
     # Dump JSON DESI + spectrograph list into a file.
+    fprefix = 'dithseq_fibermode_'
+    if isfocus:
+        fprefix = 'focus_dither_{:g}um_'.format(args.defocus)
+
     if args.pause > 0:
-        dith_filename = 'dithseq_fibermode_{:06d}_{:06d}_pause.json'.format(minid, maxid)
+        dith_filename = '{}_{:06d}_{:06d}_pause.json'.format(fprefix, minid, maxid)
     else:
-        dith_filename = 'dithseq_fibermode_{:06d}_{:06d}.json'.format(minid, maxid)
+        dith_filename = '{}_{:06d}_{:06d}.json'.format(fprefix, minid, maxid)
     json.dump(dith_script, open(dith_filename, 'w'), indent=4)
     log.info('Use {} in the DESI observer console.'.format(dith_filename))
 
