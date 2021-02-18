@@ -184,7 +184,7 @@ def setup_fibermode(args):
     minid, maxid = args.tilerange
     tile_ids = range(minid, maxid+1, 1)
 
-    log.debug('{:>7s} {:>7s} {:>7s}'.format('Tile', 'RA', 'Dec'))
+    log.debug('   {:>7s} {:>7s} {:>7s}  Flavor'.format('Tile', 'RA', 'Dec'))
 
     for i, tile_id in enumerate(tile_ids):
         tile_ra, tile_dec, tile_dith, tile_flav = get_tile_info(tile_id, args.dryrun)
@@ -192,27 +192,22 @@ def setup_fibermode(args):
             if i == 0:
                 tile_dith = False
 
-        log.debug('{:7d} {:7g} {:7g}'.format(tile_id, tile_ra, tile_dec))
+        log.debug('{:2d} {:7d} {:7g} {:7g}  {}'.format(i, tile_id, tile_ra, tile_dec, tile_flav))
 
         # Logging variables sent to ICS for output to FITS headers:
         passthru = '{{ TILEID:{:d}, TILERA:{:g}, TILEDEC:{:g} }}'.format(tile_id, tile_ra, tile_dec)
         
+        # Check if this is a focus dither tile.
         isfocus = args.defocus is not None and tile_flav.lower()=='dithfocus'
-        if isfocus:
-            log.debug('Tile {} is a focus dither tile'.format(tile_id))
 
         # Program name. Note that first tile/exposure is undithered.
-        if tile_dith:
-            if isfocus:
-                prog = 'Focus dither tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
-            else:
-                prog = 'Dither fibermode tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
-        else:
-            if isfocus:
-                prog = 'Focus dither undithered tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
-            else:
-                prog = 'Dither fibermode undithered tile {:d} ({:g}, {:g})'.format(tile_id, tile_ra, tile_dec)
+        prog = 'Focus dither {:g} um,'.format(args.defocus) if isfocus else 'Dither fibermode'
+        prog = '{} tile'.format(prog) if tile_dith else '{} undithered tile'.format(prog)
 
+        prog = '{} {:d} ({:g}, {:g})'.format(prog, tile_id, tile_ra, tile_dec)
+
+        log.debug(prog)
+        
         if isfocus:
             # Set up focus dither tiles as follows:
             # 1. DESI seq to acquire the tile with no spectrograph exposure.
@@ -268,9 +263,9 @@ def setup_fibermode(args):
                                     'delay'               : args.pause})
 
     # Dump JSON DESI + spectrograph list into a file.
-    fprefix = 'dithseq_fibermode_'
+    fprefix = 'dithseq_fibermode'
     if isfocus:
-        fprefix = 'focus_dither_{:g}um_'.format(args.defocus)
+        fprefix = 'focus_dither_{:g}um'.format(args.defocus)
 
     if args.pause > 0:
         dith_filename = '{}_{:06d}_{:06d}_pause.json'.format(fprefix, minid, maxid)
