@@ -42,6 +42,8 @@ def get_tile_info(tileid, dryrun=False):
         Boresight declination for this tile.
     isdith : bool
         True if fiber positions have been dithered.
+    faflavor : str
+        Fiberassign tile design info (should be dithprec, dithfocus, etc.).
     """
 
     if dryrun:
@@ -64,16 +66,16 @@ def get_tile_info(tileid, dryrun=False):
 
     header = hdus['PRIMARY'].header
     ra, dec = header['TILERA'], header['TILEDEC']
+    faflavor = header['FAFLAVOR']
 
     try:
         isdith = header['ISDITH']
     except KeyError as e:
-        print(e)
-        print(fibfile)
-        print('Use ISDITH=True')
-        isdith = True
+        log.error(e)
+        log.error('{} is not a fiberassign dither tile.'.format(fibfile))
+        raise SystemExit
 
-    return ra, dec, isdith
+    return ra, dec, isdith, faflavor
 
 
 def setup_rastermode(args):
@@ -93,7 +95,7 @@ def setup_rastermode(args):
     # Set step size. Add a unit from astropy, does not change value.
     step = args.step*u.arcsec
     tile_id = args.tileid
-    tile_ra, tile_dec, tile_dith = get_tile_info(tile_id, args.dryrun)
+    tile_ra, tile_dec, tile_dith, tile_flav = get_tile_info(tile_id, args.dryrun)
 
     # Standard raster: 3x3 with 3 visits to (0,0), 11 exposures total.
     if args.pattern == '3x3':
@@ -185,7 +187,7 @@ def setup_fibermode(args):
     log.debug('{:>7s} {:>7s} {:>7s}'.format('Tile', 'RA', 'Dec'))
 
     for i, tile_id in enumerate(tile_ids):
-        tile_ra, tile_dec, tile_dith = get_tile_info(tile_id, args.dryrun)
+        tile_ra, tile_dec, tile_dith, tile_flav = get_tile_info(tile_id, args.dryrun)
         if args.dryrun:
             if i == 0:
                 tile_dith = False
@@ -269,6 +271,8 @@ if __name__ == '__main__':
                            help='Fiber dither program ("precision dither")')
     pfmode.add_argument('-t', '--tilerange', required=True, nargs=2, type=int,
                         help='Min/max tile ID for positioners')
+    pfmode.add_argument('-d', '--defocus', type=float, default=None,
+                        help='Relative focal offset for focus dithers')
     pfmode.add_argument('-e', '--exptime', type=float, default=180.0,
                         help='Exposure time [seconds]')
     pfmode.add_argument('-f', '--focusexptime', type=float, default=60.0,
