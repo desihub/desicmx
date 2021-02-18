@@ -55,7 +55,7 @@ def get_tile_info(tileid, dryrun=False):
         log.warning('DOS_DESI_TILES undefined; using {}'.format(path))
 
     # Warning (SB): subfolder in DOS_DESI_TILES likely to change.
-    fibfile = '/'.join([path, '080', 'fiberassign-{:06d}.fits'.format(tileid)])
+    fibfile = '/'.join([path, '080', 'fiberassign-{:06d}.fits.gz'.format(tileid)])
     try:
         hdus = fits.open(fibfile)
     except FileNotFoundError as e:
@@ -69,6 +69,7 @@ def get_tile_info(tileid, dryrun=False):
         isdith = header['ISDITH']
     except KeyError as e:
         print(e)
+        print(fibfile)
         print('Use ISDITH=True')
         isdith = True
 
