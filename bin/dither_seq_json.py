@@ -249,7 +249,7 @@ if __name__ == '__main__':
 
     # Raster mode: move telescope boresight with deltara/deltadec
     prmode = sp.add_parser('rastermode', formatter_class=ArgumentDefaultsHelpFormatter,
-                          help='Telescope raster program')
+                          help='Telescope raster program ("lost in space")')
     prmode.add_argument('-t', '--tileid', required=True, type=int,
                         help='Tile ID used for raster')
     prmode.add_argument('-s', '--step', required=True, type=float,
@@ -266,10 +266,10 @@ if __name__ == '__main__':
 
     # Fiber mode: set up a sequence of fiberassign tiles.
     pfmode = sp.add_parser('fibermode', formatter_class=ArgumentDefaultsHelpFormatter,
-                           help='Fiber dither program')
+                           help='Fiber dither program ("precision dither")')
     pfmode.add_argument('-t', '--tilerange', required=True, nargs=2, type=int,
                         help='Min/max tile ID for positioners')
-    pfmode.add_argument('-e', '--exptime', type=float, default=90.0,
+    pfmode.add_argument('-e', '--exptime', type=float, default=180.0,
                         help='Exposure time [seconds]')
     pfmode.add_argument('-f', '--focusexptime', type=float, default=60.0,
                         help='Focus loop time [seconds]')
