@@ -216,32 +216,31 @@ def setup_fibermode(args):
                                 'exptime'             : args.exptime,
                                 'guider_exptime'      : 5.0,
                                 'acquisition_exptime' : 15.0,
-                                'fvc_exptime'         : 2.0,
                                 'sky_exptime'         : args.skyexptime,
                                 'focus_exptime'       : args.focusexptime,
-                                'movedelay'           : args.movedelay,
                                 'usespectrographs'    : False,
                                 'program'             : 'Acquire focus dither tile {}'.format(tile_id)})
-            # 2. Turn off guiding.
-            dith_script.append({'sequence'            : 'Action',
-                                'action'              : 'stoploops',
-                                'loops'               : 'guiding'})
+#            # 2. Turn off guiding.
+#            dith_script.append({'sequence'            : 'Action',
+#                                'action'              : 'stoploops',
+#                                'loops'               : 'guiding'})
             # 3. Change the relative focus by the argument 'defocus'.
             dith_script.append({'sequence'            : 'Action',
                                 'action'              : 'slew',
-                                'focus'               : args.defocus})
+                                'focus'               : args.defocus,
+                                'relfocus'            : True})
             # 4. Expose the spectrographs.
             dith_script.append({'sequence'            : 'Spectrographs',
                                 'flavor'              : 'science',
+                                'obstype'             : 'SCIENCE',
                                 'exptime'             : args.exptime,
-                                'correct_for_adc'     : False,
-                                'usetemp'             : False,
-                                'uselut'              : False,
+                                'noadjustments'       : True,
                                 'program'             : prog})
             # 5. Return the focus to its original location.
             dith_script.append({'sequence'            : 'Action',
                                 'action'              : 'slew',
-                                'focus'               : -args.defocus})
+                                'focus'               : -args.defocus,
+                                'relfocus'            : True})
         else:
             # Stack up DESI sequences. Note: exptime is for spectrographs.
             dith_script.append({'sequence'            : 'DESI',
