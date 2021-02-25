@@ -231,6 +231,7 @@ def setup_fibermode(args):
                                 'obstype'             : 'SCIENCE',
                                 'exptime'             : args.exptime,
                                 'correct_for_adc'     : False,
+                                'resetrot'            : False,
                                 'program'             : prog})
             # 4. Return the focus to its original location.
             dith_script.append({'sequence'            : 'Action',
