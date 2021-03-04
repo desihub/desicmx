@@ -209,36 +209,52 @@ def setup_fibermode(args):
         log.debug(prog)
         
         if isfocus:
-            # Set up focus dither tiles as follows:
-            # 1. DESI seq to acquire the tile with no spectrograph exposure.
-            dith_script.append({'sequence'            : 'DESI',
-                                'fiberassign'         : tile_id,
-                                'exptime'             : args.exptime,
-                                'guider_exptime'      : 5.0,
-                                'acquisition_exptime' : 15.0,
-                                'usesky'              : False,
-                                'usefocus'            : False,
-                                'usespectrographs'    : False,
-                                'program'             : 'Acquire focus dither tile {}'.format(tile_id)})
-            # 2. Change the relative focus by the argument 'defocus'.
-            dith_script.append({'sequence'            : 'Action',
-                                'action'              : 'slew',
-                                'focus'               : args.defocus,
-                                'relfocus'            : True})
-            # 3. Expose the spectrographs.
-            dith_script.append({'sequence'            : 'Spectrographs',
-                                'flavor'              : 'science',
-                                'obstype'             : 'SCIENCE',
-                                'exptime'             : args.exptime,
-                                'noadjustments'       : True,
-                                'required'            : '[HEXAPOD]',
-                                'tileid'              : tile_id,
-                                'program'             : prog})
-            # 4. Return the focus to its original location.
-            dith_script.append({'sequence'            : 'Action',
-                                'action'              : 'slew',
-                                'focus'               : -args.defocus,
-                                'relfocus'            : True})
+            if args.testfocus:
+                # Try a focus dither using only a DESI sequence with the
+                # shiftfocus keyword. This should shift the focus just before
+                # the spectrograph sequence, then shift it back.
+                dith_script.append({'sequence'            : 'DESI',
+                                    'fiberassign'         : tile_id,
+                                    'exptime'             : args.exptime,
+                                    'guider_exptime'      : 5.0,
+                                    'acquisition_exptime' : 15.0,
+                                    'fvc_exptime'         : 2.0,
+                                    'sky_exptime'         : args.skyexptime,
+                                    'focus_exptime'       : args.focusexptime,
+                                    'movedelay'           : args.movedelay,
+                                    'shiftfocus'          : args.defocus,
+                                    'program'             : prog})
+            else:
+                # Set up focus dither tiles as follows:
+                # 1. DESI seq to acquire the tile with no spectrograph exposure.
+                dith_script.append({'sequence'            : 'DESI',
+                                    'fiberassign'         : tile_id,
+                                    'exptime'             : args.exptime,
+                                    'guider_exptime'      : 5.0,
+                                    'acquisition_exptime' : 15.0,
+                                    'usesky'              : False,
+                                    'usefocus'            : False,
+                                    'usespectrographs'    : False,
+                                    'program'             : 'Acquire focus dither tile {}'.format(tile_id)})
+                # 2. Change the relative focus by the argument 'defocus'.
+                dith_script.append({'sequence'            : 'Action',
+                                    'action'              : 'slew',
+                                    'focus'               : args.defocus,
+                                    'relfocus'            : True})
+                # 3. Expose the spectrographs.
+                dith_script.append({'sequence'            : 'Spectrographs',
+                                    'flavor'              : 'science',
+                                    'obstype'             : 'SCIENCE',
+                                    'exptime'             : args.exptime,
+                                    'noadjustments'       : True,
+                                    'required'            : '[HEXAPOD]',
+                                    'tileid'              : tile_id,
+                                    'program'             : prog})
+                # 4. Return the focus to its original location.
+                dith_script.append({'sequence'            : 'Action',
+                                    'action'              : 'slew',
+                                    'focus'               : -args.defocus,
+                                    'relfocus'            : True})
         else:
             # Stack up DESI sequences. Note: exptime is for spectrographs.
             dith_script.append({'sequence'            : 'DESI',
@@ -318,6 +334,8 @@ if __name__ == '__main__':
                         help='Sky loop time [seconds]')
     pfmode.add_argument('-p', '--pause', type=float, default=0.0,
                         help='Pause for cooldown [seconds]')
+    pfmode.add_argument('--testfocus', action='store_true',
+                        help='Try focus dithers with DESI sequences')
     pfmode.set_defaults(func=setup_fibermode)
 
     args = p.parse_args()
