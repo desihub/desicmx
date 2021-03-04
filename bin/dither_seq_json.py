@@ -231,6 +231,7 @@ def setup_fibermode(args):
                                 'obstype'             : 'SCIENCE',
                                 'exptime'             : args.exptime,
                                 'noadjustments'       : True,
+                                'required'            : '[HEXAPOD]',
                                 'tileid'              : tile_id,
                                 'program'             : prog})
             # 4. Return the focus to its original location.
