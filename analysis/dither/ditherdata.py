@@ -1,14 +1,26 @@
 from configparser import ConfigParser
 from glob import glob
 import os
+import pdb
 
 from astropy.table import Table
-from astropy.io import fits
+from astropy.io import fits, ascii
 
 import numpy as np
 import scipy.ndimage
 
 import desimodel.io
+
+
+def get_fafn(fn):
+    if fn[-8:] == '.fits.gz':
+        return fn
+    if fn[-5:] != '.fits':
+        fn = fn + '.fits'
+    if os.path.exists(fn):
+        return fn
+    else:
+        return fn+'.gz'
 
 
 class DitherSequence:
@@ -56,10 +68,10 @@ class DitherSequence:
             self._central_exposure = int(sequence['centralexposure'])
             import re
             fadir = coords['fiberassigndir']
-            self._ditherfa = fits.getdata(os.path.join(
-                fadir, 'fiberassign-%s.fits' % coords['ditheredtilenum']))
-            self._unditherfa = fits.getdata(os.path.join(
-                fadir, 'fiberassign-%s.fits' % coords['unditheredtilenum']))
+            self._ditherfa = fits.getdata(get_fafn(os.path.join(
+                fadir, 'fiberassign-%s' % coords['ditheredtilenum'])))
+            self._unditherfa = fits.getdata(get_fafn(os.path.join(
+                fadir, 'fiberassign-%s' % coords['unditheredtilenum'])))
             expnum = [int(re.split('-|_', fn)[1])
                       for fn in self._wcs['filename']]
             centralind = expnum.index(self._central_exposure)
@@ -70,9 +82,9 @@ class DitherSequence:
         elif coords['dithertype'] == 'fiber':
             if 'unditheredtilenum' in coords:
                 fadir = coords['fiberassigndir']
-                self._unditherfa = fits.getdata(os.path.join(
+                self._unditherfa = fits.getdata(get_fafn(os.path.join(
                     fadir,
-                    'fiberassign-%s.fits' % coords['unditheredtilenum']))
+                    'fiberassign-%s' % coords['unditheredtilenum'])))
                 print(fadir, coords['unditheredtilenum'])
         else:
             raise ValueError('not implemented')
@@ -183,7 +195,8 @@ def rearrange_table(table):
 def buildtable(exposure_files, filetype, dithertype,
                unditherfa=None, ditherfa=None,
                centralwcs=None, lookup_wcs=None,
-               verbose=1, usewcspair=1, rawdir=None, correct_area=True):
+               verbose=1, usewcspair=1, rawdir=None, correct_area=True,
+               desimeterdir=None):
     """Loop through the exposure list and construct an observation
     table."""
 
@@ -245,7 +258,8 @@ def buildtable(exposure_files, filetype, dithertype,
                     raise ValueError('could not find real fibermap!')
                 nightexpdir = '/'.join(exfile.split('/')[-3:-1])
                 faname = f'fiberassign-{fluxhead["TILEID"]:06d}.fits'
-                ditherfafn = os.path.join(rawdir, nightexpdir, faname)
+                ditherfafn = get_fafn(
+                    os.path.join(rawdir, nightexpdir, faname))
                 ditherfa = fits.getdata(ditherfafn, 'FIBERASSIGN')
                 if not np.all(ditherfa['fiber'] ==
                               np.arange(len(ditherfa))):
@@ -256,11 +270,18 @@ def buildtable(exposure_files, filetype, dithertype,
             target_id = fibermap['TARGETID']
             target_ra = fibermap['TARGET_RA']
             target_dec = fibermap['TARGET_DEC']
+            if 'FIBER_RA' in fibermap.dtype.names:
+                target_ra = fibermap['FIBER_RA']
+                target_dec = fibermap['FIBER_DEC']
             fiber = fibermap['FIBER']
             objtype = fibermap['OBJTYPE']
-            flux_g = fibermap['FLUX_G']
-            flux_r = fibermap['FLUX_R']
-            flux_z = fibermap['FLUX_Z']
+            gaia_flux = 10.**((22.5-fibermap['GAIA_PHOT_G_MEAN_MAG'])/2.5)
+            flux_g = np.where(fibermap['FLUX_G'] == -99, gaia_flux,
+                              fibermap['FLUX_G'])
+            flux_r = np.where(fibermap['FLUX_R'] == -99, gaia_flux,
+                              fibermap['FLUX_R'])
+            flux_z = np.where(fibermap['FLUX_Z'] == -99, gaia_flux,
+                              fibermap['FLUX_Z'])
             x, y = [fibermap['FIBERASSIGN_{}'.format(val)]
                     for val in ('X', 'Y')]
 
@@ -271,11 +292,13 @@ def buildtable(exposure_files, filetype, dithertype,
                          unditherfa['targetid'][fiber]) &
                         (fibermap['objtype'] == 'TGT'))
             ontarget = (ontarget &
-                        (fibermap['morphtype'] == 'PSF'))
+                        ((fibermap['morphtype'] == 'PSF') |
+                         (fibermap['morphtype'] == 'GPSF')))
             if 'FIBERSTATUS' in fibermap.dtype.names:
                 okstatus = fibermap['fiberstatus'] == 0
                 if ~np.any(okstatus):
-                    print('no okay fibers; skipping fiberstatus cut.')
+                    print('no okay fibers; skipping fiberstatus cut on '
+                          f'{os.path.basename(exfile)}.')
                 else:
                     ontarget = ontarget & (fibermap['fiberstatus'] == 0)
 
@@ -304,7 +327,6 @@ def buildtable(exposure_files, filetype, dithertype,
                     if np.all(~np.isfinite(dra)):
                         print('warning: no good telescope offset, %s' %
                               exfile)
-                        import pdb
                         pdb.set_trace()
             elif dithertype == 'fiber':
                 # the _dithered_ fiberassign file info is in the fibermap
@@ -327,6 +349,27 @@ def buildtable(exposure_files, filetype, dithertype,
                 ddec = (dithdec-udithdec)*60*60
                 dra[~ontarget] = np.nan
                 ddec[~ontarget] = np.nan
+            elif dithertype == 'desimeter':
+                if desimeterdir is None:
+                    raise ValueError('desimeter dir not set!')
+                nightexpdir = '/'.join(exfile.split('/')[-3:-1])
+                fvcfn = f'fvc-{expid:08d}.csv'
+                fvcfn = os.path.join(desimeterdir, nightexpdir, fvcfn)
+                fvc = ascii.read(fvcfn)
+                _, mf, md = np.intersect1d(
+                    fvc['LOCATION'], fibermap['LOCATION'], return_indices=True)
+                udithra = unditherfa['target_ra'][fiber]
+                udithdec = unditherfa['target_dec'][fiber]
+                target_ra = udithra
+                target_dec = udithdec
+                dithra = np.full(len(udithra), np.nan, 'f8')
+                dithdec = dithra.copy()
+                dithra[md] = fvc['RA'][mf]
+                dithdec[md] = fvc['DEC'][mf]
+                dra = (dithra - udithra)*np.cos(np.radians(udithdec))*60*60
+                ddec = (dithdec - udithdec)*60*60
+                dra[~ontarget] = np.nan
+                ddec[~ontarget] = np.nan
             else:
                 raise ValueError('not implemented')
 
@@ -341,7 +384,7 @@ def buildtable(exposure_files, filetype, dithertype,
                     mask = ivar > meanivar / 100
                     wavebounds = dict(B=[4000, 5500],
                                       R=[5650, 7120],
-                                      Z=[8500, 9950])
+                                      Z=[8500, 9900])
                     mask = (mask & (wave > wavebounds[camera][0]) &
                             (wave < wavebounds[camera][1]))
                     specflux = np.trapz(flux*mask, wave)
@@ -412,7 +455,7 @@ def getfilenames(expid, date, filetype, location):
         fileprefix = 'qcframe'
 
         if location == 'nersc':
-            prefix = '/global/project/projectdirs/desi/spectro/nightwatch/kpno'
+            prefix = '/global/project/projectdirs/desi/spectro/nightwatch/nersc'
         elif location == 'kpno':
             prefix = '/exposures/nightwatch'
         else:
@@ -439,7 +482,7 @@ def getfilenames(expid, date, filetype, location):
         folder = '{}/{}/{:08d}'.format(prefix, date, ex)
         files = sorted(glob('{}/{}*.fits'.format(folder, fileprefix)))
         exfiles[ex] = files
-
+    print(exfiles)
     return exfiles
 
 
