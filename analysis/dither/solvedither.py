@@ -1544,6 +1544,13 @@ def process(data, camera, outdir='.', label='dither%s',
     print('Attempting to solve for %d fibers in %d exposures.' %
           tdata['spectroflux'].shape)
     guess = guess_starcounts(tdata, camera)
+    if np.any(~np.isfinite(guess)):
+        print('some bad guess fluxes!')
+        m = ~np.isfinite(guess)
+        guess[m] = np.max(tdata['spectroflux'][m, :], axis=1)
+    if np.any(~np.isfinite(guess)):
+        import pdb
+        pdb.set_trace()
     if 'psffun' not in kw:
         kw['psffun'] = partial(SimpleFiberIntegratedPSF,
                                psffun=invariable_moffat,

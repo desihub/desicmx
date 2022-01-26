@@ -10,15 +10,18 @@ def massage(dat):
     dat['delta_y_arcsec'][m, :] = np.nan
     m = dat['hmag'][:, 0] < 0
     dat['hmag'][m, :] = 0
-    var = 1./np.clip(dat['spectroflux_ivar'], 1e-6, np.inf)
+    var = 1./np.clip(dat['spectroflux_ivar'], 1e-30, np.inf)
     var += (0.05*dat['spectroflux'])**2
+    snr = dat['spectroflux']*np.sqrt(dat['spectroflux_ivar'])
     dat['spectroflux_ivar'] = 1/var
     dat = fits_to_simple2d(dat)
     unusable = (np.all(~np.isfinite(dat['delta_x_arcsec']) |
                        ~np.isfinite(dat['delta_y_arcsec']), axis=1) |
                 (dat['hmag'][:, 0] <= 0) |
                 (dat['xfocal'][:, 0] < -800) |
-                (dat['yfocal'][:, 0] < -800))
+                (dat['yfocal'][:, 0] < -800) |
+                (np.sum(snr > 5, axis=1) <= 5) |
+                (np.max(snr, axis=1) < 20))
     dat = dat[~unusable, :]
     # dat['mjd_obs'] = dat['expid']
     return dat
@@ -136,4 +139,4 @@ if __name__ == '__main__':
     solvedither.process({cam: dat2}, cam,
                         overwrite=True, label=label,
                         threads=args.nthreads, platescale=platescalesdss,
-                        fiberdiameter=120, useguess=False)
+                        fiberdiameter=120, useguess=False, niter=20)
