@@ -464,9 +464,9 @@ def getfilenames(expid, date, filetype, location):
         fileprefix = 'sframe'
 
         if location == 'nersc':
-            prefix = '/global/project/projectdirs/desi/spectro/redux/daily/exposures'
+            prefix = '/global/cfs/cdirs/desi/spectro/redux/daily/exposures'
         elif location == 'nersc_dither':
-            prefix = '/global/project/projectdirs/desi/spectro/redux/dither/exposures'
+            prefix = '/global/cfs/cdirs/desi/spectro/redux/dither/exposures'
         elif location == 'nersc_andes':
             prefix = '/global/cfs/cdirs/desi/spectro/redux/andes/exposures'
         elif location == 'kpno':
@@ -480,9 +480,14 @@ def getfilenames(expid, date, filetype, location):
     exfiles = {}
     for ex in expid:
         folder = '{}/{}/{:08d}'.format(prefix, date, ex)
-        files = sorted(glob('{}/{}*.fits'.format(folder, fileprefix)))
+        files = sorted(glob('{}/{}*.fits*'.format(folder, fileprefix)))
         exfiles[ex] = files
     print(exfiles)
+    nall = sum(len(exfiles[x]) for x in exfiles)
+    if nall == 0:
+        print('problem finding files, dropping into a debugger.')
+        import pdb
+        pdb.set_trace()
     return exfiles
 
 

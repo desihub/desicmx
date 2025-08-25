@@ -409,7 +409,9 @@ def fake_data(nexp=10, nfiber=5000, mseeing=1.1, devseeing=0.2, meantrans=0.4,
         ntri = (nexp-1) // 3
         # ang0 = np.repeat(np.random.rand(nfiber, ntri)*2*np.pi, 3, axis=1)
         ang0 = (np.random.rand(nfiber, 1)*2*np.pi +
-                np.arange(ntri)[None, :]/ntri*2*np.pi)
+                np.arange(ntri)[None, :]/ntri*2*np.pi/3)
+        rng = np.random.default_rng()
+        ang0 = rng.permutation(ang0, axis=1)
         ang0 = np.repeat(ang0, 3, axis=1)
         # rad = np.repeat(np.sqrt(np.random.rand(nfiber, ntri)*ditherscale),
         #                 3, axis=1)
@@ -432,8 +434,8 @@ def fake_data(nexp=10, nfiber=5000, mseeing=1.1, devseeing=0.2, meantrans=0.4,
     elif pattern == 'telescope':
         delta_x_tel = np.random.randn(nexp)*ditherscale
         delta_y_tel = np.random.randn(nexp)*ditherscale
-        delta_x_arcsec_const = np.random.randn(nfiber)*ditherscale
-        delta_y_arcsec_const = np.random.randn(nfiber)*ditherscale
+        delta_x_arcsec_const = np.random.randn(nfiber)*ditherscale*0.3
+        delta_y_arcsec_const = np.random.randn(nfiber)*ditherscale*0.3
         delta_x_arcsec = delta_x_arcsec_const[:, None]+delta_x_tel[None, :]
         delta_y_arcsec = delta_y_arcsec_const[:, None]+delta_y_tel[None, :]
     else:
@@ -522,7 +524,7 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
 
     if truth is not None:
         psf = [psffun([fwhm0]) for fwhm0 in truth['fwhm']]
-        if fit_focus is not None:
+        if fit_focus:
             focus = truth['focus']
             zfiboff = truth['zfiboff']
         else:
@@ -602,6 +604,16 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
     # currently assumes that objects are flat spectrum, so that there's
     # no color correction from the imaging bandpasses to the spectrophotometric
     # bandpasses.
+    # there's a perfect degeneracy between changing the fluxes of all of the
+    # stars and changing the transparency
+    # the star fluxes (guessfib[0]) are supposed to be the total fluxes
+    # integrated out to infinity that the stars actually have, before
+    # applying the transparency and the fiber acceptance.
+    # we can choose to make the starflux brighter and the transparency
+    # less.  We choose to make the median guessflux and starflux agree,
+    # so that the starflux have the same absolute calibration as the
+    # guessflux.  Then any throughput difference goes into the
+    # transparency.
     zeropoint = np.median(guessfib[0][m]/guessflux[m])
     guessfib[0] /= zeropoint
     guessim[2] *= zeropoint
@@ -724,6 +736,34 @@ def plot_performance(fakedata, fitpar, rasterized=False):
         p.text(0.1, 0.9, r'$\mu = %7.4f$' % mean, transform=p.gca().transAxes)
         p.text(0.1, 0.8, r'$\sigma = %7.3f$' % sigma,
                transform=p.gca().transAxes)
+
+
+def simulation_performance_table(results):
+    from astropy.stats import sigma_clipped_stats as clipstats
+    outlist = []
+    for key, (truth, fit) in results.items():
+        stats = {
+            '$x_f$': clipstats(fit['xfiboff'] - truth['xfiboff']),
+            '$y_f$': clipstats(fit['yfiboff'] - truth['yfiboff']),
+            'mag': clipstats(-2.5*np.log10(fit['starflux'] / truth['starflux'])),
+            'FWHM': clipstats(fit['psfparam'] - truth['fwhm']),
+            '$x_t$': clipstats(fit['xtel'] - truth['xtel']),
+            '$y_t$': clipstats(fit['ytel'] - truth['ytel']),
+            '$T$': clipstats(fit['transparency'] / truth['transparency'] - 1)
+        }
+        outlist.append(stats)
+    print(' & ' + ' & '.join(outlist[0].keys()) + r'\\')
+    lastkey = ''
+    for i, key in enumerate(results):
+        if lastkey != '' and lastkey[0] != key[0]:
+            print(r'\hline')
+        outstr = rf'{key[0]}, {key[1]}\arcsec'
+        for name, value in outlist[i].items():
+            outstr += rf' & ${value[2]:7.4f}$'
+        outstr += r' \\'
+        print(outstr)
+        lastkey = key
+
 
 
 def convolve_gaussian_with_ellipse_direct(fwhm, aa, bb, pixscale=0.01):
@@ -1044,7 +1084,7 @@ def guess_starcounts(data, camera):
     return starcounts
 
 
-def quiver_plot_basic(xfocal, yfocal, xfiboff, yfiboff, asononemm=0.03,
+def quiver_plot_basic(xfocal, yfocal, xfiboff, yfiboff, asononemm=0.01,
                       width=0.0025, stats=True, colorarr=None, **kw):
     from matplotlib import pyplot as p
     # -x since RA and X are in opposite directions!
@@ -1118,7 +1158,7 @@ def quiver_plot(sol, data, color='black', clip=0, clear=True, subsample=1,
     altaz = coord.transform_to(AltAz(obstime=time, location=kpno))
 
     alt = altaz.alt.to(u.deg).value[0]
-    p.text(100, 400, f'Altitude: {alt:5.1f}')
+    p.text(150, 400, f'Altitude: {alt:5.1f}')
 
 
 def several_quivers(fitsfn, pdffn):
