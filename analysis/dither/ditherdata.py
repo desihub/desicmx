@@ -387,7 +387,7 @@ def buildtable(exposure_files, filetype, dithertype,
                                       Z=[8500, 9900])
                     mask = (mask & (wave > wavebounds[camera][0]) &
                             (wave < wavebounds[camera][1]))
-                    specflux = np.trapz(flux*mask, wave)
+                    specflux = np.trapezoid(flux*mask, wave)
                     sumivar = np.sum(ivar[mask]**-1)
                     if sumivar > 0:
                         specflux_ivar = 1./np.sum(ivar[mask]**-1)
@@ -455,7 +455,7 @@ def getfilenames(expid, date, filetype, location):
         fileprefix = 'qcframe'
 
         if location == 'nersc':
-            prefix = '/global/project/projectdirs/desi/spectro/nightwatch/nersc'
+            prefix = '/global/cfs/cdirs/desi/spectro/nightwatch/nersc'
         elif location == 'kpno':
             prefix = '/exposures/nightwatch'
         else:

@@ -35,6 +35,7 @@ if __name__ == "__main__":
                 expid.append(int(expid0))
             except Exception:
                 raise ValueError('weird expid string: ', expid0)
+
     expfn = ditherdata.getfilenames(expid, args.night, args.reduction,
                                     args.location)
     rawdir = ('/global/cfs/cdirs/desi/spectro/data'
