@@ -6,7 +6,7 @@ from scipy.optimize import leastsq
 import astropy
 from astropy.io import fits
 from astropy.stats import mad_std
-from multiprocessing import Pool
+import multiprocessing as mp
 
 
 def fwhme1e2_to_icovar(sigma, e1, e2):
@@ -546,7 +546,7 @@ def fit_iterate(data, guessflux, niter=10, psffun=SimplePSF,
             """Ignore SIGINT in child workers."""
             import signal
             signal.signal(signal.SIGINT, signal.SIG_IGN)
-        pool = Pool(threads, initializer=initializer)
+        pool = mp.get_context('fork').Pool(threads, initializer=initializer)
     else:
         pool = None
 
